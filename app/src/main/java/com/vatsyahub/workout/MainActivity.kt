@@ -11,9 +11,10 @@ import com.vatsyahub.workout.ui.WorkoutTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val bar = android.graphics.Color.TRANSPARENT
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.light(bar, bar),
+            navigationBarStyle = SystemBarStyle.light(bar, bar),
         )
         setContent {
             WorkoutTheme {

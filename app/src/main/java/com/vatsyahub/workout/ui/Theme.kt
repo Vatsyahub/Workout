@@ -1,26 +1,30 @@
 package com.vatsyahub.workout.ui
 
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
-private val Ink = Color(0xFF0E0E0E)
-private val Paper = Color(0xFFF4F4F4)
-private val Mist = Color(0xFFA9A9A9)
+private val Ink = Color(0xFF111111)
+private val Paper = Color(0xFFFFFFFF)
+private val Quiet = Color(0xFF3A3A3A)
 
-private val Colors = darkColorScheme(
-    background = Ink,
-    surface = Ink,
-    onBackground = Paper,
-    onSurface = Paper,
-    primary = Paper,
-    onPrimary = Ink,
-    secondary = Mist,
-    onSecondary = Ink,
+private val Colors = lightColorScheme(
+    background = Paper,
+    surface = Paper,
+    onBackground = Ink,
+    onSurface = Ink,
+    primary = Ink,
+    onPrimary = Paper,
+    secondary = Quiet,
+    onSecondary = Paper,
 )
 
 @Composable
 fun WorkoutTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Colors, content = content)
+    MaterialTheme(colorScheme = Colors) {
+        CompositionLocalProvider(LocalContentColor provides Colors.onBackground, content = content)
+    }
 }
