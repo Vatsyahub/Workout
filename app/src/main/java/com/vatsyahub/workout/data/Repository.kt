@@ -122,6 +122,18 @@ class Repository(private val db: WorkoutDatabase) {
         dao.deleteLink(exerciseId, typeId)
     }
 
+    suspend fun setTypes(exerciseId: Long, typeNames: List<String>) {
+        db.withTransaction {
+            dao.deleteLinks(exerciseId)
+            val seen = LinkedHashSet<String>()
+            for (typeName in typeNames) {
+                val trimmed = typeName.trim()
+                if (trimmed.isEmpty() || !seen.add(trimmed.lowercase())) continue
+                linkType(exerciseId, trimmed)
+            }
+        }
+    }
+
     private suspend fun linkType(exerciseId: Long, typeName: String) {
         if (typeName.isBlank()) return
         val existing = dao.types().find { it.name.equals(typeName, ignoreCase = true) }

@@ -775,6 +775,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         launch { repo.addExercise(name, bodyPart, usage, types) }
     }
 
+    fun saveExercise(id: Long?, name: String, bodyPart: String, usage: String, types: List<String>) {
+        launch {
+            if (id == null) {
+                repo.addExercise(name, bodyPart, usage, types)
+            } else {
+                repo.updateExercise(id, name, bodyPart, usage)
+                repo.setTypes(id, types)
+            }
+        }
+    }
+
     fun updateExercise(id: Long, name: String, bodyPart: String, usage: String) {
         launch { repo.updateExercise(id, name, bodyPart, usage) }
     }

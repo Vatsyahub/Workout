@@ -37,6 +37,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vatsyahub.workout.data.pool
+import com.vatsyahub.workout.domain.EACH
+import com.vatsyahub.workout.domain.PASS
+import com.vatsyahub.workout.domain.Pass
 import com.vatsyahub.workout.domain.coveredMetres
 import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.dayText
@@ -188,16 +191,27 @@ fun PatternPickScreen(model: AppModel) {
 
 @Composable
 fun PatternEditScreen(model: AppModel) {
-    val passes = model.currentPasses()
-    Page {
-        passes.forEachIndexed { index, pass ->
-            Editable(patternLabel(listOf(pass)), pass.times.toString(), number = true) { text ->
-                val times = text.toIntOrNull() ?: return@Editable
-                if (times <= 0) model.removePass(index) else model.changePass(index, times)
+    var rows by remember { mutableStateOf(model.currentPasses().map { PassRow(it.kind, it.times.toString()) }) }
+    FormPage(onSave = {
+        val passes = rows.mapNotNull { row ->
+            val times = row.times.trim().toIntOrNull() ?: return@mapNotNull null
+            if (times <= 0) null else Pass(row.kind, times)
+        }
+        model.updatePasses(passes.ifEmpty { listOf(Pass(PASS, 1)) })
+        model.back()
+    }) {
+        rows.forEachIndexed { index, row ->
+            Field(if (row.kind == EACH) "Each" else "Pass", row.times, number = true) { text ->
+                rows = rows.toMutableList().also { it[index] = row.copy(times = text) }
+            }
+            if (rows.size > 1) {
+                Word("Remove") {
+                    rows = rows.filterIndexed { rowIndex, _ -> rowIndex != index }
+                }
             }
         }
-        Word("Pass") { model.addPass("PASS") }
-        Word("Each") { model.addPass("EACH") }
+        Word("Pass") { rows = rows + PassRow(PASS, "1") }
+        Word("Each") { rows = rows + PassRow(EACH, "2") }
     }
 }
 
@@ -360,53 +374,80 @@ fun OutingFormScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val draft = model.outing ?: return
     val kind = snap.kinds.find { it.id == draft.kindId } ?: return
-    var naming by remember { mutableStateOf(false) }
+    var distance by remember { mutableStateOf(draft.distanceM?.let { trimNumber(it / 1000.0) }.orEmpty()) }
+    var time by remember { mutableStateOf(durationRaw(draft.durationSec)) }
+    var gradient by remember { mutableStateOf(draft.gradient?.let { trimNumber(it) }.orEmpty()) }
+    var location by remember { mutableStateOf(draft.location.orEmpty()) }
+    var bottom by remember { mutableStateOf(draft.bottomM?.let { trimNumber(it) }.orEmpty()) }
+    var top by remember { mutableStateOf(draft.topM?.let { trimNumber(it) }.orEmpty()) }
+    var bothWays by remember { mutableStateOf(draft.bothWays == true) }
+    var extras by remember { mutableStateOf(draft.fields) }
     var fieldName by remember { mutableStateOf("") }
-    val chooseDate = pickDate(draft.day) { model.outing = draft.copy(day = it) }
-    if (naming) {
-        Page {
-            Editable(fieldName.ifBlank { "Field" }, fieldName) { fieldName = it }
-            Word("Save") {
-                if (fieldName.isNotBlank()) model.addField(kind.id, fieldName)
-                fieldName = ""
-                naming = false
+    val chooseDate = pickDate(draft.day) { picked -> model.outing = model.outing?.copy(day = picked) }
+    FormPage(onSave = {
+        val current = model.outing ?: return@FormPage
+        val pendingField = fieldName.trim()
+        if (kind.shape == "CUSTOM" && pendingField.isNotEmpty()) model.addField(kind.id, pendingField)
+        model.outing = current.copy(
+            durationSec = time.trim().ifEmpty { null }?.let { parseDuration(it, true) },
+            distanceM = distance.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) },
+            gradient = gradient.trim().ifEmpty { null }?.let { parseDecimal(it) },
+            location = location.trim().ifEmpty { null },
+            bottomM = bottom.trim().ifEmpty { null }?.let { parseDecimal(it) },
+            topM = top.trim().ifEmpty { null }?.let { parseDecimal(it) },
+            bothWays = if (kind.shape == "HIKE") bothWays else current.bothWays,
+            fields = extras,
+        )
+        model.saveOutingDraft()
+    }) {
+        Word(dayText(model.outing?.day ?: draft.day)) { chooseDate() }
+        Line(kind.name)
+        Field("Distance", distance, number = true) { distance = it }
+        Field("Time", time, number = true) { time = it }
+        val metres = distance.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) }
+        val seconds = time.trim().ifEmpty { null }?.let { parseDuration(it, true) }
+        if (metres != null && seconds != null) {
+            val pace = if (kind.shape == "SWIM") swimPaceSeconds(metres, seconds) else kmPaceSeconds(metres, seconds)
+            if (pace != null) Line(formatPace(pace) + if (kind.shape == "SWIM") " /100 m" else " /km")
+        }
+        if (kind.shape == "RUN") {
+            Field("Gradient", gradient, number = true) { gradient = it }
+        }
+        if (kind.shape == "HIKE") {
+            Field("Bottom", bottom, number = true) { bottom = it }
+            Field("Top", top, number = true) { top = it }
+            val low = bottom.trim().ifEmpty { null }?.let { parseDecimal(it) }
+            val high = top.trim().ifEmpty { null }?.let { parseDecimal(it) }
+            if (low != null && high != null) {
+                val climb = climbMetres(low, high)
+                Line("Climb ${formatMetres(climb)}")
+                if (bothWays) Line("Covered ${formatMetres(coveredMetres(climb, true))}")
+            }
+            Label("Way")
+            Word(if (bothWays) "Both ways" else "One way") { bothWays = !bothWays }
+        }
+        if (kind.shape == "RUN" || kind.shape == "HIKE") {
+            Field("Location", location) { location = it }
+        }
+        snap.fields.filter { it.kindId == kind.id }.forEach { field ->
+            Field(field.name, extras[field.id].orEmpty()) { text ->
+                extras = extras + (field.id to text)
             }
         }
-        return
-    }
-    Page {
-        Word(dayText(draft.day)) { chooseDate() }
-        Line(kind.name)
-        OutingFields(
-            shape = kind.shape,
-            durationSec = draft.durationSec,
-            distanceM = draft.distanceM,
-            gradient = draft.gradient,
-            location = draft.location,
-            bottomM = draft.bottomM,
-            topM = draft.topM,
-            bothWays = draft.bothWays,
-            extras = snap.fields.filter { it.kindId == kind.id }.map { field ->
-                Triple(field.id, field.name, draft.fields[field.id].orEmpty())
-            },
-            onDuration = { model.outing = model.outing?.copy(durationSec = it) },
-            onDistance = { model.outing = model.outing?.copy(distanceM = it) },
-            onGradient = { model.outing = model.outing?.copy(gradient = it) },
-            onLocation = { model.outing = model.outing?.copy(location = it) },
-            onBottom = { model.outing = model.outing?.copy(bottomM = it) },
-            onTop = { model.outing = model.outing?.copy(topM = it) },
-            onWays = { model.outing = model.outing?.copy(bothWays = it) },
-            onExtra = { id, value ->
-                val current = model.outing ?: return@OutingFields
-                model.outing = current.copy(fields = current.fields + (id to value))
-            },
-        )
         if (kind.shape == "CUSTOM") {
-            Word("Field") { naming = true }
+            Field("Field", fieldName) { fieldName = it }
+            Word("Add") {
+                val trimmed = fieldName.trim()
+                if (trimmed.isNotEmpty()) {
+                    model.addField(kind.id, trimmed)
+                    fieldName = ""
+                }
+            }
         }
-        Word("Save") { model.saveOutingDraft() }
     }
 }
+
+private data class PassRow(val kind: String, val times: String)
 
 @Composable
 fun OutingFields(

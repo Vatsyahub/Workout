@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +19,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -74,6 +77,7 @@ fun ListPage(content: @Composable () -> Unit) {
 
 @Composable
 fun Door(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val ink = MaterialTheme.colorScheme.onBackground
     Row(
         Modifier
             .fillMaxWidth()
@@ -81,9 +85,104 @@ fun Door(icon: ImageVector, label: String, onClick: () -> Unit) {
             .padding(vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp))
+        Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = ink)
         Spacer(Modifier.width(16.dp))
-        Text(label, style = MaterialTheme.typography.headlineMedium)
+        Text(label, style = MaterialTheme.typography.headlineMedium, color = ink)
+    }
+}
+
+@Composable
+fun FormPage(onSave: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 24.dp),
+    ) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 12.dp),
+            content = content,
+        )
+        Text(
+            "Save",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clickable(onClick = onSave)
+                .padding(vertical = 16.dp),
+        )
+    }
+}
+
+@Composable
+fun Label(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier.padding(top = 18.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+fun Field(
+    label: String,
+    value: String,
+    number: Boolean = false,
+    onDone: (() -> Unit)? = null,
+    onValue: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValue,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.headlineSmall.copy(color = MaterialTheme.colorScheme.onBackground),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.onBackground),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (number) KeyboardType.Decimal else KeyboardType.Text,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(onDone = { onDone?.invoke() }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp, bottom = 8.dp),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.onBackground),
+        )
+    }
+}
+
+@Composable
+fun ToggleRow(label: String, on: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (on) {
+            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(22.dp))
+        } else {
+            Spacer(Modifier.size(22.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.headlineSmall)
     }
 }
 

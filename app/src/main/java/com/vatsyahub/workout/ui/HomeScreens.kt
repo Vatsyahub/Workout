@@ -55,16 +55,17 @@ private fun kindIcon(shape: String): ImageVector = when (shape) {
     else -> Icons.AutoMirrored.Filled.DirectionsWalk
 }
 
-fun usageLabel(usage: String): String = when (usage) {
-    "HEAVY" -> "Heavy"
-    "BODYWEIGHT" -> "Bodyweight"
-    "BOTH" -> "Both"
-    else -> usage
-}
-
 @Composable
 fun HomeScreen(model: AppModel) {
+    val snap by model.snap.collectAsState()
+    val title = snap.profile.name.trim().ifBlank { "Home" }
     Page {
+        Text(
+            title,
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+        )
         Door(Icons.Filled.FitnessCenter, "Workout") { model.openWorkout() }
         Door(Icons.Filled.History, "Logs") { model.open(Screen.Logs) }
         Door(Icons.AutoMirrored.Filled.ViewList, "Exercises") { model.open(Screen.Exercises) }
@@ -90,11 +91,10 @@ fun WorkoutScreen(model: AppModel) {
 @Composable
 fun AddKindScreen(model: AppModel) {
     var name by remember { mutableStateOf("") }
-    Page {
-        Editable(name.ifBlank { "Name" }, name) { name = it }
-        Word("Save") {
-            if (name.isNotBlank()) model.addKind(name)
-        }
+    FormPage(onSave = {
+        if (name.isNotBlank()) model.addKind(name.trim())
+    }) {
+        Field("Name", name) { name = it }
     }
 }
 
@@ -196,6 +196,8 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
     var body by remember(exerciseId) { mutableStateOf("") }
     var usage by remember(exerciseId) { mutableStateOf("HEAVY") }
     var chosen by remember(exerciseId) { mutableStateOf(listOf<String>()) }
+    var added by remember(exerciseId) { mutableStateOf(listOf<String>()) }
+    var draftType by remember(exerciseId) { mutableStateOf("") }
     var seeded by remember(exerciseId) { mutableStateOf(exerciseId == null) }
     if (!seeded && existing != null) {
         name = existing.name
@@ -204,81 +206,59 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
         chosen = snap.typesOf(existing.id).map { it.name }
         seeded = true
     }
-    var mode by remember { mutableStateOf("form") }
-    var draftType by remember { mutableStateOf("") }
-    BackHandler(enabled = mode != "form") { mode = "form" }
     if (existing == null && exerciseId != null) {
         Page { }
         return
     }
-    when (mode) {
-        "usage" -> Page {
-            listOf("HEAVY" to "Heavy", "BODYWEIGHT" to "Bodyweight", "BOTH" to "Both").forEach { (value, label) ->
-                Word(label) {
-                    usage = value
-                    if (exerciseId != null) model.updateExercise(exerciseId, name, body, value)
-                    mode = "form"
-                }
-            }
+    val known = (snap.types.map { it.name } + added + chosen)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { it.lowercase() }
+        .sortedBy { it.lowercase() }
+    fun includeType(raw: String) {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return
+        if (known.none { it.equals(trimmed, true) }) added = added + trimmed
+        if (chosen.none { it.equals(trimmed, true) }) chosen = chosen + trimmed
+    }
+    fun toggleType(typeName: String) {
+        chosen = if (chosen.any { it.equals(typeName, true) }) {
+            chosen.filterNot { it.equals(typeName, true) }
+        } else {
+            chosen + typeName
         }
-        "type" -> Page {
-            val known = (snap.types.map { it.name } + chosen).distinct().sortedBy { it.lowercase() }
-            known.filter { candidate -> chosen.none { it.equals(candidate, true) } }.forEach { typeName ->
-                Word(typeName) {
-                    chosen = chosen + typeName
-                    if (exerciseId != null) model.addType(exerciseId, typeName)
-                    mode = "form"
-                }
-            }
-            Word("New") { mode = "new" }
+    }
+    FormPage(onSave = {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return@FormPage
+        val pending = draftType.trim()
+        val types = (if (pending.isEmpty()) chosen else chosen + pending)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+        model.saveExercise(exerciseId, trimmed, body.trim(), usage, types)
+        model.back()
+    }) {
+        Field("Name", name) { name = it }
+        Field("Body part", body) { body = it }
+        Label("Usage")
+        listOf("HEAVY" to "Heavy", "BODYWEIGHT" to "Bodyweight", "BOTH" to "Both").forEach { (value, label) ->
+            ToggleRow(label, usage == value) { usage = value }
         }
-        "new" -> Page {
-            Editable(draftType.ifBlank { "Type" }, draftType) { draftType = it }
-            Word("Save") {
-                if (draftType.isNotBlank()) {
-                    chosen = chosen + draftType.trim()
-                    if (exerciseId != null) model.addType(exerciseId, draftType)
-                    draftType = ""
-                    mode = "form"
-                }
-            }
+        Label("Types")
+        known.forEach { typeName ->
+            ToggleRow(typeName, chosen.any { it.equals(typeName, true) }) { toggleType(typeName) }
         }
-        else -> Page {
-            Editable(name.ifBlank { "Name" }, name) { text ->
-                name = text
-                if (exerciseId != null && text.isNotBlank()) model.updateExercise(exerciseId, text, body, usage)
-            }
-            Editable(body.ifBlank { "Body part" }, body) { text ->
-                body = text
-                if (exerciseId != null && text.isNotBlank()) model.updateExercise(exerciseId, name, text, usage)
-            }
-            val attached = if (exerciseId == null) {
-                chosen
-            } else {
-                snap.typesOf(exerciseId).map { it.name }
-            }
-            attached.forEach { typeName ->
-                Word(typeName) {
-                    if (exerciseId == null) {
-                        chosen = chosen.filterNot { it.equals(typeName, true) }
-                    } else {
-                        val type = snap.types.find { it.name.equals(typeName, true) }
-                        if (type != null) model.removeType(exerciseId, type.id)
-                    }
-                }
-            }
-            Word("Type") { mode = "type" }
-            Word(usageLabel(usage)) { mode = "usage" }
-            if (exerciseId == null) {
-                Word("Save") {
-                    if (name.isNotBlank() && body.isNotBlank() && chosen.isNotEmpty()) {
-                        model.addExercise(name, body, usage, chosen)
-                        model.back()
-                    }
-                }
-            } else {
-                Word("Delete") { model.deleteExercise(exerciseId) }
-            }
+        Field("New type", draftType, onDone = {
+            includeType(draftType)
+            draftType = ""
+        }) { draftType = it }
+        Word("Add") {
+            includeType(draftType)
+            draftType = ""
+        }
+        if (exerciseId != null) {
+            Word("Delete") { model.deleteExercise(exerciseId) }
         }
     }
 }
@@ -297,20 +277,45 @@ fun ProfileScreen(model: AppModel) {
     val profile = snap.profile
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var age by remember { mutableStateOf("") }
+    var weight by remember { mutableStateOf("") }
+    var height by remember { mutableStateOf("") }
+    var avatar by remember { mutableStateOf<String?>(null) }
+    var dirty by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             val encoded = shrinkAvatar(context, uri) ?: return@launch
-            model.editProfile(avatar = encoded)
+            dirty = true
+            avatar = encoded
         }
     }
-    val bitmap = remember(profile.avatar) {
-        profile.avatar?.let { encoded ->
+    if (!dirty) {
+        name = profile.name
+        age = profile.age?.toString().orEmpty()
+        weight = profile.weightKg?.let { trimNumber(it) }.orEmpty()
+        height = profile.heightCm?.let { trimNumber(it) }.orEmpty()
+        avatar = profile.avatar
+    }
+    val bitmap = remember(avatar) {
+        avatar?.let { encoded ->
             val bytes = Base64.decode(encoded, Base64.DEFAULT)
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }
     }
-    Page {
+    FormPage(onSave = {
+        model.saveProfile(
+            profile.copy(
+                name = name.trim(),
+                age = age.trim().toIntOrNull(),
+                weightKg = weight.trim().ifEmpty { null }?.let { parseDecimal(it) },
+                heightCm = height.trim().ifEmpty { null }?.let { parseDecimal(it) },
+                avatar = avatar,
+            ),
+        )
+        model.back()
+    }) {
         if (bitmap == null) {
             Word("Photo") { pick.launch("image/*") }
         } else {
@@ -325,23 +330,21 @@ fun ProfileScreen(model: AppModel) {
                     .clickable { pick.launch("image/*") },
             )
         }
-        Editable(profile.name.ifBlank { "Name" }, profile.name) { model.editProfile(name = it.trim()) }
-        Editable(profile.age?.toString() ?: "Age", profile.age?.toString().orEmpty(), number = true) { text ->
-            model.editProfile(age = text.trim().toIntOrNull(), setAge = true)
+        Field("Name", name) {
+            dirty = true
+            name = it
         }
-        Editable(
-            profile.weightKg?.let { com.vatsyahub.workout.domain.formatKg(it) } ?: "Weight",
-            profile.weightKg?.let { trimNumber(it) }.orEmpty(),
-            number = true,
-        ) { text ->
-            model.editProfile(weightKg = text.trim().ifEmpty { null }?.let { parseDecimal(it) }, setWeight = true)
+        Field("Age", age, number = true) {
+            dirty = true
+            age = it
         }
-        Editable(
-            profile.heightCm?.let { "${trimNumber(it)} cm" } ?: "Height",
-            profile.heightCm?.let { trimNumber(it) }.orEmpty(),
-            number = true,
-        ) { text ->
-            model.editProfile(heightCm = text.trim().ifEmpty { null }?.let { parseDecimal(it) }, setHeight = true)
+        Field("Weight", weight, number = true) {
+            dirty = true
+            weight = it
+        }
+        Field("Height", height, number = true) {
+            dirty = true
+            height = it
         }
     }
 }

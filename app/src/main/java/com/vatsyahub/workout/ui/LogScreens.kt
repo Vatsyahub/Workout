@@ -1,5 +1,6 @@
 package com.vatsyahub.workout.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -209,14 +210,16 @@ private fun OutingLog(model: AppModel, workout: Workout) {
     val kind = snap.kinds.find { it.id == workout.activityKindId }
     var naming by remember { mutableStateOf(false) }
     var fieldName by remember { mutableStateOf("") }
+    BackHandler(enabled = naming) { naming = false }
     if (naming && kind != null) {
-        Page {
-            Editable(fieldName.ifBlank { "Field" }, fieldName) { fieldName = it }
-            Word("Save") {
-                if (fieldName.isNotBlank()) model.addField(kind.id, fieldName)
-                fieldName = ""
-                naming = false
-            }
+        FormPage(onSave = {
+            val trimmed = fieldName.trim()
+            if (trimmed.isEmpty()) return@FormPage
+            model.addField(kind.id, trimmed)
+            fieldName = ""
+            naming = false
+        }) {
+            Field("Field", fieldName) { fieldName = it }
         }
         return
     }
