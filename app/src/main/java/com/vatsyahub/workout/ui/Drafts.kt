@@ -23,6 +23,8 @@ data class StrengthDraft(
 
 data class PartAsk(val bodyPart: String, val count: Int)
 
+fun openingDraftSets(): List<DraftSet> = List(3) { DraftSet(8, null) }
+
 data class HiitSetDraft(
     val passes: List<Pass>,
     val shared: Boolean,

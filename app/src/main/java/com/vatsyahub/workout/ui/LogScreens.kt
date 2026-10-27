@@ -42,6 +42,8 @@ import com.vatsyahub.workout.domain.formatDuration
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.parseDuration
+import com.vatsyahub.workout.domain.showsWeight
+import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.patternLabel
 import com.vatsyahub.workout.domain.weekStart
 import com.vatsyahub.workout.domain.weeklyReport
@@ -51,10 +53,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 internal fun historyKind(workout: Workout, snap: Snapshot): String = when (workout.kind) {
-    "HEAVY" -> "Heavy"
     "HIIT" -> "HIIT"
     "OUTING" -> snap.kinds.find { it.id == workout.activityKindId }?.name ?: "Outing"
-    else -> "Bodyweight"
+    else -> strengthLabel(workout.kind)
 }
 
 internal fun historyDetail(workout: Workout, snap: Snapshot): String {
@@ -198,7 +199,6 @@ fun LogDetailScreen(model: AppModel, id: Long) {
 @Composable
 private fun StrengthLog(model: AppModel, workout: Workout) {
     val snap by model.snap.collectAsState()
-    val heavy = workout.kind == "HEAVY"
     val blocks = snap.blocks.filter { it.workoutId == workout.id }.sortedBy { it.position }
     val chooseDate = pickDate(localDay(workout.performedAt)) { model.changeDay(workout.id, it) }
     val reps = blocks.sumOf { block -> snap.sets.filter { it.blockId == block.id }.sumOf { it.reps } }
@@ -206,7 +206,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (heavy) "Heavy" else "Bodyweight",
+                    strengthLabel(workout.kind),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -237,6 +237,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
         }
         blocks.forEach { block ->
             val exercise = snap.exercises.find { it.id == block.exerciseId }
+            val showWeight = showsWeight(workout.kind, exercise?.usage)
             val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part"
             var removing by remember(block.id) { mutableStateOf(false) }
             Panel {
@@ -250,13 +251,13 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 )
                 Text(part, color = MaterialTheme.colorScheme.secondary)
                 val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
-                CompactSets(formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, heavy), heavy) {
+                CompactSets(formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, showWeight), showWeight) {
                     sets.forEachIndexed { index, set ->
                         SetRow(
                             label = "Set ${index + 1}",
                             reps = set.reps,
                             weight = set.weightKg,
-                            heavy = heavy,
+                            heavy = showWeight,
                             onRemove = { model.removeSavedSet(set.id) },
                             onReps = { model.changeSet(set.id, it, set.weightKg) },
                             onWeight = { model.changeSet(set.id, set.reps, it) },

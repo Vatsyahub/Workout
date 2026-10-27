@@ -9,6 +9,7 @@ import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.dayText
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.kmPaceSeconds
+import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.swimPaceSeconds
 import java.time.Instant
 import java.time.LocalDate
@@ -52,12 +53,15 @@ fun Snapshot.passesOf(patternId: Long): List<Pass> =
         .sortedBy { it.position }
         .map { Pass(it.kind, it.times) }
 
-fun Snapshot.pool(kind: String): List<Exercise> = exercises.filter { exercise ->
-    when (kind) {
-        "HEAVY" -> exercise.usage == "HEAVY" || exercise.usage == "BOTH"
-        "BODYWEIGHT", "HIIT" -> exercise.usage == "BODYWEIGHT" || exercise.usage == "BOTH"
-        else -> false
-    }
+fun Snapshot.strengthLibrary(): List<Exercise> = exercises.filter { exercise ->
+    exercise.usage == "HEAVY" || exercise.usage == "BODYWEIGHT" || exercise.usage == "BOTH"
+}
+
+fun Snapshot.pool(kind: String): List<Exercise> = when (kind) {
+    "HEAVY" -> exercises.filter { it.usage == "HEAVY" || it.usage == "BOTH" }
+    "BODYWEIGHT", "HIIT" -> exercises.filter { it.usage == "BODYWEIGHT" || it.usage == "BOTH" }
+    "MIXED" -> strengthLibrary()
+    else -> emptyList()
 }
 
 fun Snapshot.poolExercises(kind: String): List<PoolExercise> = pool(kind).map { exercise ->
@@ -73,7 +77,7 @@ fun Snapshot.marks(zone: ZoneId = ZoneId.systemDefault()): List<Mark> {
         if (!workout.finished) continue
         val day = localDay(workout.performedAt, zone)
         when (workout.kind) {
-            "HEAVY", "BODYWEIGHT" -> out += strengthMarks(workout, day)
+            "HEAVY", "BODYWEIGHT", "MIXED" -> out += strengthMarks(workout, day)
             "HIIT" -> out += hiitMarks(workout, day)
             "OUTING" -> outingMark(workout, day)?.let { out += it }
         }
@@ -180,7 +184,7 @@ fun Snapshot.summary(workout: Workout, zone: ZoneId = ZoneId.systemDefault()): S
             val count = blocks.count { it.workoutId == workout.id }
             val ids = blocks.filter { it.workoutId == workout.id }.map { it.id }.toSet()
             val reps = sets.filter { it.blockId in ids }.sumOf { it.reps }
-            val label = if (workout.kind == "HEAVY") "Heavy" else "Bodyweight"
+            val label = strengthLabel(workout.kind)
             "$day · $label · $count exercises · $reps reps"
         }
     }

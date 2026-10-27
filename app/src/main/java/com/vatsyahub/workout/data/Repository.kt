@@ -216,7 +216,7 @@ class Repository(private val db: WorkoutDatabase) {
             Block(workoutId = workoutId, position = position, setIndex = setIndex, exerciseId = exerciseId),
         )
         val kind = dao.workouts().find { it.id == workoutId }?.kind
-        if (kind == "HEAVY" || kind == "BODYWEIGHT") {
+        if (kind == "HEAVY" || kind == "BODYWEIGHT" || kind == "MIXED") {
             repeat(3) { index ->
                 dao.insertSet(SetRow(blockId = blockId, position = index, reps = 8, weightKg = null))
             }

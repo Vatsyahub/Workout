@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.vatsyahub.workout.domain.strengthLabel
 
 @Composable
 fun AppRoot(model: AppModel = viewModel()) {
@@ -92,14 +93,18 @@ private fun titleOf(screen: Screen, model: AppModel): String = when (screen) {
     Screen.Workout -> "Workout"
     Screen.AddKind -> "New outing"
     Screen.LogType -> "Log a workout"
-    Screen.Build -> if (model.build.kind == "HEAVY") "Heavy" else "Bodyweight"
-    Screen.Strength -> if (model.strength?.kind == "BODYWEIGHT") "Bodyweight" else "Heavy"
+    Screen.Build -> strengthLabel(model.build.kind)
+    Screen.Strength -> strengthLabel(model.strength?.kind ?: "HEAVY")
     Screen.StrengthTime -> "Total time"
     Screen.Hiit -> "HIIT"
     Screen.PatternPick -> "Pattern"
     Screen.PatternEdit -> "Edit pattern"
     is Screen.SetMenu -> "Set"
-    Screen.Picker -> if (model.picker is Picker.StrengthSwap) "Choose a replacement" else "Choose exercise"
+    Screen.Picker -> if (model.picker is Picker.StrengthSwap || model.picker is Picker.PickSwap) {
+        "Choose a replacement"
+    } else {
+        "Choose exercise"
+    }
     Screen.OutingForm -> "Outing"
     is Screen.Month -> "History"
     is Screen.LogDetail -> "Workout"

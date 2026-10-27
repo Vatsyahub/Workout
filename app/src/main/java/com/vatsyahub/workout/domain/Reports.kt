@@ -73,7 +73,7 @@ private fun modeOf(mark: Mark): String = when {
     mark.kind == "OUTING" -> "OUTING"
     mark.kind == "HIIT" -> "HIIT"
     mark.topWeight != null -> "HEAVY"
-    mark.kind == "HEAVY" || mark.kind == "BODYWEIGHT" -> "BODY"
+    gymKind(mark.kind) -> "BODY"
     else -> mark.kind
 }
 
@@ -171,7 +171,7 @@ fun exerciseReport(today: LocalDate, exerciseKey: String, marks: List<Mark>): Li
 private fun bestLine(rows: List<Mark>): String? {
     val heavy = bestHeavy(rows)
     if (heavy?.topWeight != null) return "Best · ${formatKg(heavy.topWeight)}"
-    val body = rows.filter { it.kind == "BODYWEIGHT" || (it.kind == "HEAVY" && it.topWeight == null) }
+    val body = rows.filter { gymKind(it.kind) && it.topWeight == null }
     val reps = bestReps(body)
     if (reps != null && reps.totalReps > 0) return "Best · ${reps.totalReps} reps"
     val work = bestWork(rows.filter { it.kind == "HIIT" })
@@ -189,12 +189,12 @@ fun bestsReport(today: LocalDate, marks: List<Mark>): List<ReportLine> {
         val heavy = bestHeavy(group)
         if (heavy?.topWeight != null) {
             lines += ReportLine("$name · ${formatKg(heavy.topWeight)} · ${dayText(heavy.day)}", heavy.workoutId)
-            val reps = bestReps(group.filter { it.kind == "HEAVY" || it.kind == "BODYWEIGHT" })
+            val reps = bestReps(group.filter { gymKind(it.kind) })
             if (reps != null) {
                 lines += ReportLine("$name · ${reps.totalReps} reps · ${dayText(reps.day)}", reps.workoutId)
             }
         } else {
-            val body = bestReps(group.filter { it.kind == "BODYWEIGHT" || it.kind == "HEAVY" })
+            val body = bestReps(group.filter { gymKind(it.kind) })
             if (body != null && body.totalReps > 0) {
                 lines += ReportLine("$name · ${body.totalReps} reps · ${dayText(body.day)}", body.workoutId)
             }
@@ -237,6 +237,9 @@ fun bestsReport(today: LocalDate, marks: List<Mark>): List<ReportLine> {
     }
     return lines
 }
+
+private fun gymKind(kind: String): Boolean =
+    kind == "HEAVY" || kind == "BODYWEIGHT" || kind == "MIXED"
 
 private fun bestPace(marks: List<Mark>): Mark? =
     marks.filter { it.paceSec != null }

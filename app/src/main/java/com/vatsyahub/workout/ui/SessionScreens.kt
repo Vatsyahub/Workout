@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vatsyahub.workout.data.pool
+import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.domain.EACH
 import com.vatsyahub.workout.domain.PASS
 import com.vatsyahub.workout.domain.Pass
@@ -63,19 +64,21 @@ import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
 import com.vatsyahub.workout.domain.patternLabel
 import com.vatsyahub.workout.domain.roundsOf
+import com.vatsyahub.workout.domain.showsWeight
+import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.swimPaceSeconds
 
 @Composable
 fun StrengthScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val draft = model.strength ?: return
-    val heavy = draft.kind == "HEAVY"
     val chooseDate = pickDate(draft.day) { model.setDraftDay(it) }
     val exerciseCount = draft.lines.size
     val totalReps = draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }
+    val handPicked = draft.lines.isNotEmpty() && draft.lines.all { it.groupKind == "PICK" }
     ActionPage("Mark as finished", { model.open(Screen.StrengthTime) }) {
         Panel {
-            Text(if (heavy) "Heavy" else "Bodyweight", style = MaterialTheme.typography.titleLarge)
+            Text(strengthLabel(draft.kind), style = MaterialTheme.typography.titleLarge)
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 StatTile("Date", dayText(draft.day), Modifier.weight(1f), chooseDate)
                 StatTile("Exercises", exerciseCount.toString(), Modifier.weight(1f))
@@ -89,6 +92,7 @@ fun StrengthScreen(model: AppModel) {
         }
         draft.lines.forEachIndexed { lineIndex, line ->
             val exercise = snap.exercises.find { it.id == line.exerciseId }
+            val showWeight = showsWeight(draft.kind, exercise?.usage)
             Panel {
                 Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -118,20 +122,22 @@ fun StrengthScreen(model: AppModel) {
                             Text(line.group, color = MaterialTheme.colorScheme.secondary)
                         }
                     }
-                    IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                    if (line.groupKind != "PICK") {
+                        IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                        }
                     }
                     IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                CompactSets(formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, heavy), heavy) {
+                CompactSets(formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight), showWeight) {
                     line.sets.forEachIndexed { setIndex, set ->
                         SetRow(
                             label = "Set ${setIndex + 1}",
                             reps = set.reps,
                             weight = set.weightKg,
-                            heavy = heavy,
+                            heavy = showWeight,
                             onRemove = { model.removeDraftSet(lineIndex, setIndex) },
                             onReps = { model.setDraftReps(lineIndex, setIndex, it) },
                             onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
@@ -142,7 +148,7 @@ fun StrengthScreen(model: AppModel) {
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
-        QuietButton("Reroll all") { model.rerollDraftAll() }
+        if (!handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
     }
 }
 
@@ -390,11 +396,12 @@ fun PickerScreen(model: AppModel) {
             is Picker.StrengthSwap -> {
                 val line = model.strength?.lines?.getOrNull(request.line)
                 val fromType = line?.groupKind == "TYPE" && line.group.isNotBlank()
+                val fromPick = line?.groupKind == "PICK"
                 Text(
-                    if (fromType) {
-                        "Exercises in ${line?.group}. Tap one to use it here."
-                    } else {
-                        "Any exercise in this workout. Tap one to use it here."
+                    when {
+                        fromType -> "Exercises in ${line?.group}. Tap one to use it here."
+                        fromPick -> "Any exercise you have added. Tap one to use it here."
+                        else -> "Any exercise in this workout. Tap one to use it here."
                     },
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
@@ -419,14 +426,33 @@ fun PickerScreen(model: AppModel) {
                 }
             }
             is Picker.AddStrength -> {
+                val draft = model.strength
                 val kind = if (request.workoutId == null) {
-                    model.strength?.kind ?: "HEAVY"
+                    draft?.kind ?: "HEAVY"
                 } else {
                     snap.workouts.find { it.id == request.workoutId }?.kind ?: "HEAVY"
                 }
-                snap.pool(kind).forEach { exercise ->
+                val handPicked = request.workoutId == null &&
+                    (kind == "MIXED" || draft?.lines?.any { it.groupKind == "PICK" } == true)
+                val exercises = if (handPicked || kind == "MIXED") snap.strengthLibrary() else snap.pool(kind)
+                exercises.forEach { exercise ->
                     Word("${exercise.name} · ${exercise.bodyPart}") { model.pickExercise(exercise.id) }
                 }
+            }
+            is Picker.PickSwap -> {
+                Text(
+                    "Any exercise you have added. Tap one to use it here.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                )
+                snap.strengthLibrary()
+                    .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
+                    .forEach { exercise ->
+                        WorkoutCard(
+                            exercise.name,
+                            if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
+                        ) { model.pickExercise(exercise.id) }
+                    }
             }
             is Picker.AddHiit -> {
                 snap.pool("HIIT").forEach { exercise ->

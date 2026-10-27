@@ -18,7 +18,11 @@ import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.kmPaceSeconds
+import com.vatsyahub.workout.domain.PickCandidate
+import com.vatsyahub.workout.domain.classifyPickedKind
+import com.vatsyahub.workout.domain.matchExercises
 import com.vatsyahub.workout.domain.repeatStrength
+import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.withFavourite
 import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
@@ -33,6 +37,7 @@ import com.vatsyahub.workout.domain.inLastThreeMonths
 import java.time.LocalDate
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -274,6 +279,103 @@ class WorkoutLogicTest {
         assertEquals(listOf(8, 8, 6), session.lines[0].sets.map { it.reps })
         assertEquals(20.0, session.lines[0].sets[0].weightKg!!, 0.001)
         assertEquals(16.0, session.lines[1].sets[0].weightKg!!, 0.001)
+    }
+
+    @Test
+    fun searchReturnsAtMostFiveAndRanksPrefixBeforeContains() {
+        val exercises = listOf(
+            PickCandidate(1, "Curl", "HEAVY"),
+            PickCandidate(2, "Hammer curl", "HEAVY"),
+            PickCandidate(3, "Preacher curl", "HEAVY"),
+            PickCandidate(4, "Incline curl", "BODYWEIGHT"),
+            PickCandidate(5, "Cable curl", "HEAVY"),
+            PickCandidate(6, "Spider curl", "HEAVY"),
+            PickCandidate(7, "Reverse curl", "BODYWEIGHT"),
+            PickCandidate(8, "Squat", "HEAVY"),
+            PickCandidate(9, "Row", "HEAVY"),
+            PickCandidate(10, "Romanian deadlift", "HEAVY"),
+            PickCandidate(11, "Reverse fly", "BODYWEIGHT"),
+            PickCandidate(12, "Rear delt raise", "HEAVY"),
+            PickCandidate(13, "Renegade row", "HEAVY"),
+            PickCandidate(14, "Rest pause curl", "HEAVY"),
+            PickCandidate(15, "Upright row", "BODYWEIGHT"),
+        )
+        val curls = matchExercises(exercises, "curl")
+        assertEquals(5, curls.size)
+        assertEquals(
+            listOf("Curl", "Cable curl", "Hammer curl", "Incline curl", "Preacher curl"),
+            curls.map { it.name },
+        )
+        val rows = matchExercises(exercises, "r")
+        assertEquals(5, rows.size)
+        assertTrue(rows.all { it.name.lowercase().startsWith("r") })
+        assertTrue(rows.none { it.name == "Upright row" })
+        assertEquals(
+            listOf("Press", "Bench press", "Leg press"),
+            matchExercises(
+                listOf(
+                    PickCandidate(1, "Bench press", "HEAVY"),
+                    PickCandidate(2, "Press", "HEAVY"),
+                    PickCandidate(3, "Leg press", "BODYWEIGHT"),
+                ),
+                "PrEsS",
+            ).map { it.name },
+        )
+        assertTrue(matchExercises(exercises, "").isEmpty())
+        assertTrue(matchExercises(exercises, "   ").isEmpty())
+    }
+
+    @Test
+    fun pickedMixOfHeavyAndBodyweightIsMixed() {
+        assertEquals("MIXED", classifyPickedKind(listOf("HEAVY", "BODYWEIGHT"), "HEAVY"))
+        assertEquals("MIXED", classifyPickedKind(listOf("BODYWEIGHT", "HEAVY"), "BODYWEIGHT"))
+        assertEquals("MIXED", classifyPickedKind(listOf("HEAVY", "BOTH", "BODYWEIGHT"), "HEAVY"))
+        assertEquals("Mixed", strengthLabel("MIXED"))
+    }
+
+    @Test
+    fun allHeavyPickStaysHeavy() {
+        assertEquals("HEAVY", classifyPickedKind(listOf("HEAVY", "HEAVY"), "BODYWEIGHT"))
+        assertEquals("HEAVY", classifyPickedKind(listOf("HEAVY", "BOTH"), "BODYWEIGHT"))
+        assertEquals("HEAVY", classifyPickedKind(listOf("BOTH"), "HEAVY"))
+        assertEquals("BODYWEIGHT", classifyPickedKind(listOf("BODYWEIGHT", "BOTH"), "HEAVY"))
+        assertEquals("Heavy", strengthLabel("HEAVY"))
+    }
+
+    @Test
+    fun repeatOfMixedLogCopiesLinesWithoutMutatingOriginal() {
+        val session = LoggedSession(
+            id = 9,
+            kind = "MIXED",
+            favourite = true,
+            durationSec = 40 * 60,
+            lines = listOf(
+                LoggedLoad(1, listOf(SetLoad(8, 20.0), SetLoad(8, 20.0))),
+                LoggedLoad(2, listOf(SetLoad(10, null))),
+            ),
+        )
+        val draft = repeatStrength(session)
+        assertEquals("MIXED", draft.kind)
+        assertNull(draft.durationSec)
+        assertEquals(1L, draft.lines[0].exerciseId)
+        assertEquals(listOf(8, 8), draft.lines[0].sets.map { it.reps })
+        assertEquals(20.0, draft.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(20.0, draft.lines[0].sets[1].weightKg!!, 0.001)
+        assertEquals(2L, draft.lines[1].exerciseId)
+        assertEquals(10, draft.lines[1].sets.single().reps)
+        assertNull(draft.lines[1].sets.single().weightKg)
+        assertNotSame(session.lines, draft.lines)
+        assertNotSame(session.lines[0].sets, draft.lines[0].sets)
+        assertNotSame(session.lines[1].sets, draft.lines[1].sets)
+        assertEquals(9L, session.id)
+        assertEquals("MIXED", session.kind)
+        assertEquals(true, session.favourite)
+        assertEquals(40 * 60, session.durationSec)
+        assertEquals(listOf(8, 8), session.lines[0].sets.map { it.reps })
+        assertEquals(20.0, session.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(20.0, session.lines[0].sets[1].weightKg!!, 0.001)
+        assertEquals(10, session.lines[1].sets[0].reps)
+        assertNull(session.lines[1].sets[0].weightKg)
     }
 
     private fun heavy(id: Long, day: LocalDate, name: String, weight: Double, reps: Int) = Mark(

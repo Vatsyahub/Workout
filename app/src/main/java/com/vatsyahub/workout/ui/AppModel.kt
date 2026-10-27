@@ -19,7 +19,9 @@ import com.vatsyahub.workout.data.blockName
 import com.vatsyahub.workout.data.passesOf
 import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.poolExercises
+import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.data.typesOf
+import com.vatsyahub.workout.domain.classifyPickedKind
 import com.vatsyahub.workout.domain.DefaultPasses
 import com.vatsyahub.workout.domain.EACH
 import com.vatsyahub.workout.domain.PASS
@@ -89,9 +91,15 @@ sealed interface Picker {
     data class AddStrength(val workoutId: Long?) : Picker
     data class AddHiit(val set: Int, val workoutId: Long?) : Picker
     data class BodyPart(val index: Int) : Picker
+    data class PickSwap(val line: Int) : Picker
 }
 
-data class BuildState(val kind: String, val parts: List<PartAsk>, val mode: String = "PART")
+data class BuildState(
+    val kind: String,
+    val parts: List<PartAsk>,
+    val mode: String = "PART",
+    val picks: List<StrengthLine> = emptyList(),
+)
 
 data class ClockUi(
     val workoutId: Long,
@@ -247,10 +255,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setBuildMode(mode: String) {
-        build = buildFor(build.kind, mode)
+        val picks = build.picks
+        build = buildFor(build.kind, mode).copy(picks = picks)
     }
 
     private fun buildFor(kind: String, mode: String): BuildState {
+        if (mode == "PICK") return BuildState(kind, emptyList(), mode)
         val pool = snap.value.pool(kind)
         val names = if (mode == "TYPE") {
             pool.flatMap { exercise -> snap.value.typesOf(exercise.id).map { it.name } }
@@ -296,11 +306,66 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 pool.filter { it.bodyPart.equals(ask.bodyPart, ignoreCase = true) }.map { it.id }
             }
             drawBodyPart(ids, ask.count, Random).forEach { id ->
-                lines += StrengthLine(id, List(3) { DraftSet(8, null) }, ask.bodyPart, build.mode)
+                lines += StrengthLine(id, openingDraftSets(), ask.bodyPart, build.mode)
             }
         }
         if (lines.isEmpty()) return
         strength = StrengthDraft(build.kind, LocalDate.now(), null, lines)
+        open(Screen.Strength)
+    }
+
+    fun addPicked(exerciseId: Long) {
+        if (snap.value.exercises.none { it.id == exerciseId }) return
+        build = build.copy(
+            picks = build.picks + StrengthLine(exerciseId, openingDraftSets(), groupKind = "PICK"),
+        )
+    }
+
+    fun removePicked(index: Int) {
+        build = build.copy(picks = build.picks.filterIndexed { i, _ -> i != index })
+    }
+
+    fun setPickReps(line: Int, set: Int, reps: Int) {
+        editPick(line, set) { it.copy(reps = reps.coerceAtLeast(0)) }
+    }
+
+    fun setPickWeight(line: Int, set: Int, weight: Double?) {
+        editPick(line, set) { it.copy(weightKg = weight) }
+    }
+
+    fun addPickSet(line: Int) {
+        val picks = build.picks.toMutableList()
+        val row = picks.getOrNull(line) ?: return
+        picks[line] = row.copy(sets = row.sets + DraftSet(8, null))
+        build = build.copy(picks = picks)
+    }
+
+    fun removePickSet(line: Int, set: Int) {
+        val picks = build.picks.toMutableList()
+        val row = picks.getOrNull(line) ?: return
+        picks[line] = row.copy(sets = row.sets.filterIndexed { index, _ -> index != set })
+        build = build.copy(picks = picks)
+    }
+
+    private fun editPick(line: Int, set: Int, change: (DraftSet) -> DraftSet) {
+        val picks = build.picks.toMutableList()
+        val row = picks.getOrNull(line) ?: return
+        val sets = row.sets.toMutableList()
+        val current = sets.getOrNull(set) ?: return
+        sets[set] = change(current)
+        picks[line] = row.copy(sets = sets)
+        build = build.copy(picks = picks)
+    }
+
+    fun openPicked() {
+        if (build.picks.isEmpty()) return
+        val draft = StrengthDraft(
+            build.kind,
+            LocalDate.now(),
+            null,
+            build.picks.map { line -> line.copy(sets = line.sets.map { it.copy() }, groupKind = "PICK") },
+        )
+        strength = withKind(draft)
         open(Screen.Strength)
     }
 
@@ -349,13 +414,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun removeDraftLine(line: Int) {
         val draft = strength ?: return
-        strength = draft.copy(lines = draft.lines.filterIndexed { index, _ -> index != line })
+        strength = withKind(draft.copy(lines = draft.lines.filterIndexed { index, _ -> index != line }))
         if (stack.lastOrNull() == Screen.Picker) back()
     }
 
     fun lineChoices(line: Int): List<com.vatsyahub.workout.data.Exercise> {
         val draft = strength ?: return emptyList()
         val row = draft.lines.getOrNull(line) ?: return snap.value.pool(draft.kind)
+        if (row.groupKind == "PICK") return snap.value.strengthLibrary()
         val pool = snap.value.pool(draft.kind)
         return if (row.groupKind == "TYPE" && row.group.isNotBlank()) {
             pool.filter { exercise -> snap.value.typesOf(exercise.id).any { it.name.equals(row.group, true) } }
@@ -379,6 +445,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun rerollDraftLine(line: Int) {
         val draft = strength ?: return
         val row = draft.lines.getOrNull(line) ?: return
+        if (row.groupKind == "PICK") return
         val ids = rerollIds(draft.kind, row)
         if (ids.isEmpty()) return
         val next = rerollOne(ids, row.exerciseId, Random)
@@ -389,12 +456,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun rerollDraftAll() {
         val draft = strength ?: return
-        val indexes = draft.lines.indices.groupBy { index ->
-            val row = draft.lines[index]
-            row.groupKind to row.group.ifBlank {
-                snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart
+        val indexes = draft.lines.indices
+            .filter { draft.lines[it].groupKind != "PICK" }
+            .groupBy { index ->
+                val row = draft.lines[index]
+                row.groupKind to row.group.ifBlank {
+                    snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart
+                }
             }
-        }
         val ids = draft.lines.map { it.exerciseId }.toMutableList()
         for ((key, group) in indexes) {
             val sample = draft.lines[group.first()]
@@ -407,8 +476,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveStrength() {
-        val draft = strength ?: return
+        val draft = withKind(strength ?: return)
         if (draft.lines.isEmpty()) return
+        strength = draft
         viewModelScope.launch {
             val id = repo.saveStrength(
                 draft.kind,
@@ -419,6 +489,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             strength = null
             showLog(id)
         }
+    }
+
+    private fun withKind(draft: StrengthDraft): StrengthDraft {
+        if (draft.lines.none { it.groupKind == "PICK" } && draft.kind != "MIXED") return draft
+        val usages = draft.lines.map { line ->
+            snap.value.exercises.find { it.id == line.exerciseId }?.usage.orEmpty()
+        }
+        return draft.copy(kind = classifyPickedKind(usages, draft.kind))
     }
 
     fun newHiit(manual: Boolean) {
@@ -464,7 +542,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val loaded = snap.value
         val workout = loaded.workouts.find { it.id == workoutId } ?: return
         when (workout.kind) {
-            "HEAVY", "BODYWEIGHT" -> {
+            "HEAVY", "BODYWEIGHT", "MIXED" -> {
                 val plan = repeatStrength(loggedSession(loaded, workout))
                 strength = StrengthDraft(
                     plan.kind,
@@ -511,7 +589,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun loggedSession(loaded: Snapshot, workout: Workout): LoggedSession {
-        val lines = if (workout.kind == "HEAVY" || workout.kind == "BODYWEIGHT") {
+        val lines = if (workout.kind == "HEAVY" || workout.kind == "BODYWEIGHT" || workout.kind == "MIXED") {
             loaded.blocks.filter { it.workoutId == workout.id && it.exerciseId != null }
                 .sortedBy { it.position }
                 .map { block ->
@@ -867,14 +945,26 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 val chosenPart = snap.value.exercises.find { it.id == id }?.bodyPart.orEmpty()
                 val group = if (row.groupKind == "TYPE") row.group else chosenPart.ifBlank { row.group }
                 lines[request.line] = row.copy(exerciseId = id, group = group)
-                strength = draft.copy(lines = lines)
+                strength = withKind(draft.copy(lines = lines))
+            }
+            is Picker.PickSwap -> {
+                val picks = build.picks.toMutableList()
+                val row = picks.getOrNull(request.line) ?: return
+                picks[request.line] = row.copy(exerciseId = id)
+                build = build.copy(picks = picks)
             }
             is Picker.HiitSwap -> swapHiit(request.set, request.line, id)
             is Picker.AddStrength -> {
                 if (request.workoutId == null) {
                     val draft = strength
                     if (draft != null) {
-                        strength = draft.copy(lines = draft.lines + StrengthLine(id, List(3) { DraftSet(8, null) }))
+                        val handPicked = draft.kind == "MIXED" || draft.lines.any { it.groupKind == "PICK" }
+                        val line = StrengthLine(
+                            id,
+                            openingDraftSets(),
+                            groupKind = if (handPicked) "PICK" else "PART",
+                        )
+                        strength = withKind(draft.copy(lines = draft.lines + line))
                     }
                 } else {
                     launch { repo.addBlock(request.workoutId, id) }
