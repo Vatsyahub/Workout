@@ -108,11 +108,20 @@ fun StrengthScreen(model: AppModel) {
     val exerciseCount = draft.lines.size
     val totalReps = draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }
     val handPicked = draft.lines.isNotEmpty() && draft.lines.all { it.groupKind == "PICK" }
-    val action = if (draft.logging) "Mark as finished" else "Save and start workout"
+    val editing = draft.editingPlanId != null
+    val action = when {
+        editing -> "Save"
+        draft.logging -> "Mark as finished"
+        else -> "Save and start workout"
+    }
     ActionPage(
         action,
         {
-            if (draft.logging) model.open(Screen.StrengthTime) else model.startFocusedWorkout()
+            when {
+                editing -> model.savePlanEdit()
+                draft.logging -> model.open(Screen.StrengthTime)
+                else -> model.startFocusedWorkout()
+            }
         },
         showAction = draft.logging || draft.lines.isNotEmpty(),
     ) {
@@ -179,7 +188,7 @@ fun StrengthScreen(model: AppModel) {
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (!handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
-        if (!draft.logging && draft.lines.isNotEmpty()) {
+        if (!draft.logging && draft.editingPlanId == null && draft.lines.isNotEmpty()) {
             QuietButton("Save as Plan") { model.saveStrengthAsPlan() }
             if (model.planNote == "LINES") {
                 Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
@@ -403,10 +412,21 @@ fun HiitScreen(model: AppModel) {
     val draft = model.hiit ?: return
     val shared = draft.sets.all { it.shared }
     val chooseDate = pickDate(draft.day) { model.setHiitDay(it) }
-    val action = if (draft.manual) "Save" else "Open clock"
+    val editing = draft.editingPlanId != null
+    val action = when {
+        editing -> "Save"
+        draft.manual -> "Save"
+        else -> "Open clock"
+    }
     val patternName = if (shared) patternLabel(draft.template) else "Mixed"
     val roundCount = if (shared) roundsOf(draft.template).toString() else "Mixed"
-    ActionPage(action, { if (draft.manual) model.saveManualHiit() else model.startClock() }) {
+    ActionPage(action, {
+        when {
+            editing -> model.saveHiitPlanEdit()
+            draft.manual -> model.saveManualHiit()
+            else -> model.startClock()
+        }
+    }) {
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconBadge(Icons.Filled.Timer)
@@ -483,7 +503,7 @@ fun HiitScreen(model: AppModel) {
         }
         QuietButton("Add set") { model.addHiitSet() }
         QuietButton("Reroll all") { model.rerollHiitAll() }
-        if (!draft.manual) {
+        if (!draft.manual && draft.editingPlanId == null) {
             QuietButton("Save as Plan") { model.saveHiitAsPlan() }
             if (model.planNote == "HIIT") {
                 Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)

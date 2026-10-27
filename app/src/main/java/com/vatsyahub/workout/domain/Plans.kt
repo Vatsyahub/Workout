@@ -62,6 +62,7 @@ data class StrengthHold(
     val focus: Int = 0,
     val lines: List<PlanLine> = emptyList(),
     val shown: List<List<Long>> = emptyList(),
+    val sourcePlanId: Long? = null,
 )
 
 data class BuilderDraft(
@@ -82,6 +83,7 @@ data class LogRecord(
     val id: Long,
     val finished: Boolean,
     val kind: String = "",
+    val favourite: Boolean = false,
 )
 
 data class HeldSession(
@@ -94,10 +96,14 @@ data class HeldSession(
 data class WorkoutBook(
     val plans: List<PlanRecord> = emptyList(),
     val logs: List<LogRecord> = emptyList(),
+    val favourites: List<Long> = emptyList(),
     val active: HeldSession? = null,
     val nextPlanId: Long = 1,
     val nextLogId: Long = 1,
 )
+
+@Serializable
+data class SessionOrigin(val sourcePlanId: Long? = null)
 
 sealed interface StartResult {
     data class Started(val book: WorkoutBook) : StartResult
@@ -110,6 +116,14 @@ fun encodePlan(body: PlanBody): String = planJson.encodeToString(body)
 
 fun decodePlan(text: String): PlanBody? = try {
     planJson.decodeFromString<PlanBody>(text)
+} catch (_: Exception) {
+    null
+}
+
+fun encodeOrigin(id: Long): String = planJson.encodeToString(SessionOrigin(id))
+
+fun decodeOrigin(text: String): Long? = try {
+    planJson.decodeFromString<SessionOrigin>(text).sourcePlanId
 } catch (_: Exception) {
     null
 }
@@ -144,6 +158,17 @@ fun planDetail(body: PlanBody): String {
     return body.counts.filter { it.count > 0 }.joinToString(", ") { "${it.label} ${it.count}" }
 }
 
+fun applyEditedSets(edited: List<PlanSet>): List<PlanSet> = edited.map { PlanSet(it.reps, it.weightKg) }
+
+fun WorkoutBook.savePlanEdits(id: Long, body: PlanBody): WorkoutBook {
+    if (plans.none { it.id == id }) return this
+    val written = body.copy(lines = body.lines.map { line -> line.copy(sets = applyEditedSets(line.sets)) })
+    return copy(plans = plans.map { plan -> if (plan.id == id) plan.copy(body = written) else plan })
+}
+
+fun WorkoutBook.deletePlan(id: Long): WorkoutBook =
+    copy(plans = plans.filterNot { it.id == id })
+
 fun WorkoutBook.saveBuilderPlan(draft: BuilderDraft): WorkoutBook {
     val plan = PlanRecord(
         id = nextPlanId,
@@ -174,11 +199,20 @@ fun WorkoutBook.startWorkout(mode: String, label: String): StartResult {
 
 fun WorkoutBook.finishActive(): WorkoutBook {
     val session = active ?: return this
+    val origin = session.sourcePlanId
     return copy(
         active = null,
+        plans = if (origin == null) plans else plans.filterNot { it.id == origin },
         logs = logs + LogRecord(nextLogId, finished = true, kind = session.mode),
         nextLogId = nextLogId + 1,
     )
+}
+
+fun WorkoutBook.editPlanBody(id: Long, body: PlanBody): WorkoutBook = savePlanEdits(id, body)
+
+fun WorkoutBook.editPlan(id: Long, lines: List<PlanLine>): WorkoutBook {
+    val plan = plans.find { it.id == id } ?: return this
+    return savePlanEdits(id, plan.body.copy(lines = lines))
 }
 
 fun WorkoutBook.restored(): HeldSession? = active

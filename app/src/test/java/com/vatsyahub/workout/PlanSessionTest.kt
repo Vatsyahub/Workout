@@ -14,6 +14,8 @@ import com.vatsyahub.workout.domain.StartResult
 import com.vatsyahub.workout.domain.StrengthHold
 import com.vatsyahub.workout.domain.WorkoutBook
 import com.vatsyahub.workout.domain.decodeStrengthHold
+import com.vatsyahub.workout.domain.deletePlan
+import com.vatsyahub.workout.domain.editPlan
 import com.vatsyahub.workout.domain.encodeStrengthHold
 import com.vatsyahub.workout.domain.finishActive
 import com.vatsyahub.workout.domain.openPlan
@@ -89,7 +91,7 @@ class PlanSessionTest {
     }
 
     @Test
-    fun openingAPlanCanBeStartedAgainBecauseThePlanRemains() {
+    fun openingAPlanLeavesItUntilThatSessionIsFinished() {
         val saved = WorkoutBook().saveBuilderPlan(
             BuilderDraft(kind = "HEAVY", mode = "LINES", lines = listOf(bench, row)),
         )
@@ -101,14 +103,77 @@ class PlanSessionTest {
         assertEquals(saved.logs, started.logs)
         assertEquals(id, started.active?.sourcePlanId)
         val finished = started.finishActive()
-        assertEquals(saved.plans, finished.plans)
+        assertTrue(finished.plans.isEmpty())
         assertNull(finished.active)
-        val second = finished.openPlan(id)
-        assertTrue(second is StartResult.Started)
-        val again = (second as StartResult.Started).book
-        assertEquals(id, again.plans.single().id)
-        assertEquals(listOf(bench, row), again.plans.single().body.lines)
-        assertEquals(id, again.active?.sourcePlanId)
+        assertTrue(finished.logs.single().finished)
+        assertTrue(finished.openPlan(id) is StartResult.Rejected)
+    }
+
+    @Test
+    fun finishingTheSessionStartedFromAPlanRemovesThatPlanAndKeepsAFavourite() {
+        val logs = listOf(LogRecord(3, finished = true, kind = "HEAVY"))
+        val favourite = 3L
+        val saved = WorkoutBook(logs = logs, favourites = listOf(favourite))
+            .saveBuilderPlan(BuilderDraft(kind = "HEAVY", mode = "LINES", lines = listOf(bench, row)))
+            .saveBuilderPlan(BuilderDraft(kind = "BODYWEIGHT", mode = "LINES", lines = listOf(row)))
+        val planId = saved.plans[0].id
+        val otherId = saved.plans[1].id
+        val started = (saved.openPlan(planId) as StartResult.Started).book
+        assertEquals(saved.plans, started.plans)
+        assertEquals(listOf(favourite), started.favourites)
+        assertEquals(logs, started.logs)
+        assertEquals(planId, started.active?.sourcePlanId)
+        val finished = started.finishActive()
+        assertTrue(finished.plans.none { it.id == planId })
+        assertEquals(otherId, finished.plans.single().id)
+        assertEquals(listOf(row), finished.plans.single().body.lines)
+        assertEquals(listOf(favourite), finished.favourites)
+        assertEquals(logs.size + 1, finished.logs.size)
+        assertTrue(finished.logs.all { it.finished })
+        assertNull(finished.active)
+        assertTrue(finished.openPlan(planId) is StartResult.Rejected)
+        val unrelated = (finished.startWorkout("STRENGTH", "Heavy") as StartResult.Started).book
+        val afterOther = unrelated.finishActive()
+        assertEquals(listOf(otherId), afterOther.plans.map { it.id })
+        assertEquals(listOf(favourite), afterOther.favourites)
+    }
+
+    @Test
+    fun deleteRemovesOnlyThatPlan() {
+        val logs = listOf(LogRecord(3, finished = true, kind = "HEAVY"))
+        val favourite = 3L
+        val book = WorkoutBook(logs = logs, favourites = listOf(favourite))
+            .saveBuilderPlan(BuilderDraft(kind = "HEAVY", mode = "LINES", lines = listOf(bench, row)))
+            .saveBuilderPlan(BuilderDraft(kind = "BODYWEIGHT", mode = "LINES", lines = listOf(row)))
+        val first = book.plans[0].id
+        val second = book.plans[1]
+        val deleted = book.deletePlan(first)
+        assertEquals(listOf(second.id), deleted.plans.map { it.id })
+        assertEquals(second.body.lines, deleted.plans.single().body.lines)
+        assertEquals(logs, deleted.logs)
+        assertEquals(listOf(favourite), deleted.favourites)
+        assertNull(deleted.active)
+    }
+
+    @Test
+    fun editChangesThePlansExerciseList() {
+        val logs = listOf(LogRecord(3, finished = true, kind = "HEAVY"))
+        val favourite = 3L
+        val book = WorkoutBook(logs = logs, favourites = listOf(favourite))
+            .saveBuilderPlan(BuilderDraft(kind = "HEAVY", mode = "LINES", lines = listOf(bench, row)))
+            .saveBuilderPlan(BuilderDraft(kind = "BODYWEIGHT", mode = "PICK", lines = listOf(row)))
+        val id = book.plans[0].id
+        val other = book.plans[1]
+        val editedLines = listOf(
+            row.copy(sets = listOf(PlanSet(12, 50.0))),
+            bench.copy(sets = listOf(PlanSet(5, 80.0), PlanSet(5, 85.0))),
+        )
+        val edited = book.editPlan(id, editedLines)
+        assertEquals(editedLines, edited.plans.first { it.id == id }.body.lines)
+        assertEquals(other, edited.plans.first { it.id == other.id })
+        assertEquals(logs, edited.logs)
+        assertEquals(listOf(favourite), edited.favourites)
+        assertNull(edited.active)
     }
 
     @Test

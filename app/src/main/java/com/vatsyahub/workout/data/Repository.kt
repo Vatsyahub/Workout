@@ -470,6 +470,14 @@ class Repository(private val db: WorkoutDatabase) {
             ),
         )
 
+    suspend fun updatePlan(id: Long, kind: String, title: String, body: String) {
+        dao.updatePlan(id, kind, title, body)
+    }
+
+    suspend fun deletePlan(id: Long) {
+        dao.deletePlan(id)
+    }
+
     suspend fun saveOuting(
         kindId: Long,
         day: LocalDate,

@@ -331,6 +331,8 @@ fun WorkoutCard(
     favourite: Boolean = false,
     onUnfavourite: (() -> Unit)? = null,
     icon: ImageVector? = null,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -363,6 +365,30 @@ fun WorkoutCard(
             }
             if (detail.isNotBlank()) {
                 Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+        if (onEdit != null || onDelete != null) {
+            Column(Modifier.padding(end = 8.dp)) {
+                if (onEdit != null) {
+                    Text(
+                        "Edit",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .clickable(onClick = onEdit)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                }
+                if (onDelete != null) {
+                    Text(
+                        "Delete",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .clickable(onClick = onDelete)
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                }
             }
         }
         if (onUnfavourite != null) {

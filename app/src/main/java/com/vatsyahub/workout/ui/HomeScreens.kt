@@ -179,6 +179,8 @@ fun HomeScreen(model: AppModel) {
                     plan.title.ifBlank { planTitle(plan.kind, body) },
                     planDetail(body),
                     icon = planIcon(plan.kind),
+                    onEdit = { model.editPlan(plan.id) },
+                    onDelete = { model.deletePlan(plan.id) },
                 ) { model.startPlan(plan.id) }
             }
         }

@@ -57,6 +57,8 @@ data class StrengthDraft(
     val started: Boolean = false,
     val focus: Int = 0,
     val logging: Boolean = false,
+    val sourcePlanId: Long? = null,
+    val editingPlanId: Long? = null,
 )
 
 data class PartAsk(val bodyPart: String, val count: Int)
@@ -82,6 +84,8 @@ data class HiitDraft(
     val manual: Boolean,
     val warmupSec: Int = 120,
     val cooldownSec: Int = 300,
+    val sourcePlanId: Long? = null,
+    val editingPlanId: Long? = null,
 )
 
 data class OutingDraft(

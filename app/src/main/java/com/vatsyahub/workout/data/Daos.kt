@@ -255,6 +255,12 @@ interface WorkoutDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlans(rows: List<SavedPlan>)
 
+    @Query("UPDATE plans SET kind = :kind, title = :title, body = :body WHERE id = :id")
+    suspend fun updatePlan(id: Long, kind: String, title: String, body: String)
+
+    @Query("DELETE FROM plans WHERE id = :id")
+    suspend fun deletePlan(id: Long)
+
     @Query("DELETE FROM plans")
     suspend fun clearPlans()
 

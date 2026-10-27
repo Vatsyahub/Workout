@@ -37,10 +37,16 @@ import com.vatsyahub.workout.domain.StrengthHold
 import com.vatsyahub.workout.domain.StartResult
 import com.vatsyahub.workout.domain.WorkoutBook
 import com.vatsyahub.workout.domain.classifyPickedKind
+import com.vatsyahub.workout.domain.decodeOrigin
 import com.vatsyahub.workout.domain.decodePlan
 import com.vatsyahub.workout.domain.decodeStrengthHold
+import com.vatsyahub.workout.domain.deletePlan
+import com.vatsyahub.workout.domain.editPlan
+import com.vatsyahub.workout.domain.editPlanBody
+import com.vatsyahub.workout.domain.encodeOrigin
 import com.vatsyahub.workout.domain.encodePlan
 import com.vatsyahub.workout.domain.encodeStrengthHold
+import com.vatsyahub.workout.domain.finishActive
 import com.vatsyahub.workout.domain.openPlan
 import com.vatsyahub.workout.domain.planDetail
 import com.vatsyahub.workout.domain.planTitle
@@ -189,6 +195,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     private var activeMode: String? = null
     private val sessionGate = Mutex()
+    private var pendingPlanId: Long? = null
+    private var hiitPlanOrigin: Long? = null
 
     private var cues: List<ResolvedCue> = emptyList()
     private var cueIndex = 0
@@ -230,6 +238,16 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun back() {
         val draft = strength
+        if (stack.lastOrNull() == Screen.Strength && draft?.editingPlanId != null) {
+            strength = null
+            if (stack.size > 1) stack.removeAt(stack.lastIndex)
+            return
+        }
+        if (stack.lastOrNull() == Screen.Hiit && hiit?.editingPlanId != null) {
+            hiit = null
+            if (stack.size > 1) stack.removeAt(stack.lastIndex)
+            return
+        }
         if (stack.lastOrNull() == Screen.Strength && draft != null && draft.started && !draft.logging) {
             val under = stack.getOrNull(stack.lastIndex - 1)
             val fromPick = under == Screen.Build && build.mode == "PICK"
@@ -367,12 +385,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun beginEmptyStrength(kind: String) {
         if (busy()) return
+        pendingPlanId = null
         strength = StrengthDraft(kind, LocalDate.now(), null, emptyList(), logging = true)
         open(Screen.Strength)
     }
 
     fun beginBuild(kind: String) {
         if (busy()) return
+        pendingPlanId = null
         build = buildFor(kind, "PART")
         open(Screen.Build)
     }
@@ -481,11 +501,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private fun orderDrawn(cards: List<DrawCard>, kind: String, dragged: Boolean): List<DrawCard> =
         drawnOrder(cards, kind, dragged)
 
-    fun drawBuild() {
-        if (activeMode != null) {
-            notice = ACTIVE_BLOCK
-            return
-        }
+    private fun drawnBuildLines(): List<StrengthLine> {
         val pool = snap.value.pool(build.kind)
         val used = HashSet<Long>()
         val chosen = ArrayList<Pair<DrawCard, String>>()
@@ -508,10 +524,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 chosen += card to ask.bodyPart
             }
         }
-        if (chosen.isEmpty()) return
+        if (chosen.isEmpty()) return emptyList()
         val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
         val groups = chosen.toMap()
-        val lines = ordered.map { card ->
+        return ordered.map { card ->
             StrengthLine(
                 card.id,
                 prescribedSets(card, ordered, build.kind),
@@ -520,7 +536,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 key = lineKey(),
             )
         }
-        strength = StrengthDraft(build.kind, LocalDate.now(), null, lines)
+    }
+
+    fun drawBuild() {
+        if (activeMode != null) {
+            notice = ACTIVE_BLOCK
+            return
+        }
+        val lines = drawnBuildLines()
+        if (lines.isEmpty()) return
+        val origin = pendingPlanId
+        pendingPlanId = null
+        strength = StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin)
         open(Screen.Strength)
     }
 
@@ -623,7 +650,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun startFocusedWorkout() {
         val draft = strength ?: return
-        if (draft.lines.isEmpty() || draft.logging) return
+        if (draft.editingPlanId != null || draft.lines.isEmpty() || draft.logging) return
         if (draft.started) return
         if (busy()) return
         activeMode = "STRENGTH"
@@ -836,7 +863,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun saveStrength() {
         val draft = withKind(strength ?: return)
+        if (draft.editingPlanId != null) {
+            savePlanEdit()
+            return
+        }
         if (draft.lines.isEmpty()) return
+        val origin = draft.sourcePlanId
         strength = draft
         viewModelScope.launch {
             val id = repo.saveStrength(
@@ -845,7 +877,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 draft.durationSec,
                 draft.lines.map { line -> line.exerciseId to line.sets.map { it.reps to it.weightKg } },
             )
+            dropFinishedOrigin(origin)
             activeMode = null
+            pendingPlanId = null
             strength = null
             sessionGate.withLock {
                 if (activeMode == null) repo.clearActive()
@@ -877,7 +911,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun saveStrengthAsPlan() {
         val draft = strength ?: return
-        if (draft.logging || draft.lines.isEmpty()) return
+        if (draft.logging || draft.editingPlanId != null || draft.lines.isEmpty()) return
         storePlan(
             BuilderDraft(
                 kind = draft.kind,
@@ -889,7 +923,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun saveHiitAsPlan() {
         val draft = hiit ?: return
-        if (draft.manual) return
+        if (draft.manual || draft.editingPlanId != null) return
         val loaded = snap.value
         storePlan(
             BuilderDraft(
@@ -919,6 +953,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun startPlan(id: Long) {
         if (busy()) return
+        pendingPlanId = null
         val row = snap.value.plans.find { it.id == id } ?: return
         val body = decodePlan(row.body) ?: return
         val kept = WorkoutBook(plans = listOf(com.vatsyahub.workout.domain.PlanRecord(row.id, row.kind, body)))
@@ -927,9 +962,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             notice = kept.message
             return
         }
+        val origin = (kept as com.vatsyahub.workout.domain.StartResult.Started).book.active?.sourcePlanId ?: row.id
         when {
             body.hiit != null -> {
-                hiit = hiitFromPlan(body.hiit)
+                hiit = hiitFromPlan(body.hiit).copy(sourcePlanId = origin)
                 startClock()
             }
             body.lines.isNotEmpty() -> {
@@ -941,23 +977,130 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     lines = body.lines.map { it.toStrengthLine() },
                     started = true,
                     focus = 0,
+                    sourcePlanId = origin,
                 )
                 open(Screen.Strength)
             }
             body.counts.any { it.count > 0 } -> {
                 val mode = body.counts.firstOrNull { it.mode.isNotBlank() }?.mode ?: body.mode
+                pendingPlanId = origin
                 strength = null
                 build = BuildState(row.kind, body.counts.map { PartAsk(it.label, it.count) }, mode)
                 drawBuild()
                 val drafted = strength
                 if (drafted != null && drafted.lines.isNotEmpty()) {
                     activeMode = "STRENGTH"
-                    strength = drafted.copy(started = true, focus = 0)
+                    strength = drafted.copy(started = true, focus = 0, sourcePlanId = drafted.sourcePlanId ?: origin)
                 } else {
                     open(Screen.Build)
                 }
             }
         }
+    }
+
+    fun editPlan(id: Long) {
+        if (busy()) return
+        pendingPlanId = null
+        val row = snap.value.plans.find { it.id == id } ?: return
+        val body = decodePlan(row.body) ?: return
+        when {
+            body.hiit != null -> {
+                hiit = hiitFromPlan(body.hiit).copy(editingPlanId = id)
+                open(Screen.Hiit)
+            }
+            body.lines.isNotEmpty() -> {
+                strength = StrengthDraft(
+                    kind = row.kind,
+                    day = LocalDate.now(),
+                    durationSec = null,
+                    lines = body.lines.map { it.toStrengthLine() },
+                    editingPlanId = id,
+                )
+                open(Screen.Strength)
+            }
+            else -> {
+                val mode = body.counts.firstOrNull { it.mode.isNotBlank() }?.mode ?: body.mode.ifBlank { "PART" }
+                build = BuildState(row.kind, body.counts.map { PartAsk(it.label, it.count) }, mode)
+                strength = StrengthDraft(
+                    kind = row.kind,
+                    day = LocalDate.now(),
+                    durationSec = null,
+                    lines = drawnBuildLines(),
+                    editingPlanId = id,
+                )
+                open(Screen.Strength)
+            }
+        }
+    }
+
+    fun deletePlan(id: Long) {
+        val loaded = snap.value
+        if (loaded.plans.none { it.id == id }) return
+        val book = snapshotBook(loaded)
+        val next = book.deletePlan(id)
+        if (next.logs != book.logs || next.favourites != book.favourites || next.active != book.active) return
+        if (next.plans.any { it.id == id }) return
+        val removed = book.plans.map { it.id }.toSet() - next.plans.map { it.id }.toSet()
+        if (removed != setOf(id)) return
+        viewModelScope.launch { repo.deletePlan(id) }
+    }
+
+    fun savePlanEdit() {
+        val draft = withKind(strength ?: return)
+        val id = draft.editingPlanId ?: return
+        if (draft.lines.isEmpty()) return
+        val loaded = snap.value
+        val book = snapshotBook(loaded)
+        val lines = draft.lines.map { planLine(loaded, it) }
+        val edited = book.editPlan(id, lines)
+        if (edited.logs != book.logs || edited.favourites != book.favourites || edited.active != null) return
+        val plan = edited.plans.find { it.id == id } ?: return
+        if (plan.body.lines != lines) return
+        viewModelScope.launch {
+            repo.updatePlan(id, draft.kind, planTitle(draft.kind, plan.body), encodePlan(plan.body))
+        }
+        strength = null
+        showHome()
+    }
+
+    fun saveHiitPlanEdit() {
+        val draft = hiit ?: return
+        val id = draft.editingPlanId ?: return
+        if (draft.sets.all { it.exerciseIds.isEmpty() }) return
+        val loaded = snap.value
+        val book = snapshotBook(loaded)
+        val current = book.plans.find { it.id == id } ?: return
+        val nextBody = current.body.copy(
+            mode = "HIIT",
+            hiit = PlanHiit(
+                workSec = draft.workSec,
+                restSec = draft.restSec,
+                breakSec = draft.breakSec,
+                warmupSec = draft.warmupSec,
+                cooldownSec = draft.cooldownSec,
+                template = draft.template.map { PlanPass(it.kind, it.times) },
+                sets = draft.sets.map { set ->
+                    PlanHiitSet(
+                        exerciseIds = set.exerciseIds,
+                        names = set.exerciseIds.map { exerciseId ->
+                            loaded.exercises.find { it.id == exerciseId }?.name.orEmpty()
+                        },
+                        passes = set.passes.map { PlanPass(it.kind, it.times) },
+                        shared = set.shared,
+                        splitSeconds = set.splitSeconds,
+                        breakSeconds = set.breakSeconds,
+                    )
+                },
+            ),
+        )
+        val edited = book.editPlanBody(id, nextBody)
+        if (edited.logs != book.logs || edited.favourites != book.favourites || edited.active != null) return
+        val plan = edited.plans.find { it.id == id } ?: return
+        viewModelScope.launch {
+            repo.updatePlan(id, "HIIT", planTitle("HIIT", plan.body), encodePlan(plan.body))
+        }
+        hiit = null
+        showHome()
     }
 
     private fun withKind(draft: StrengthDraft): StrengthDraft {
@@ -970,6 +1113,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun newHiit(manual: Boolean) {
         if (!manual && busy()) return
+        pendingPlanId = null
         val loaded = snap.value
         val last = loaded.workouts.filter { it.kind == "HIIT" && it.finished }.maxByOrNull { it.performedAt }
         val pool = loaded.poolExercises("HIIT")
@@ -1010,6 +1154,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun repeat(workoutId: Long) {
         if (busy()) return
+        pendingPlanId = null
         val loaded = snap.value
         val workout = loaded.workouts.find { it.id == workoutId } ?: return
         when (workout.kind) {
@@ -1283,8 +1428,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val draft = hiit ?: return
+        if (draft.editingPlanId != null) return
         if (draft.sets.all { it.exerciseIds.isEmpty() }) return
         if (busy()) return
+        hiitPlanOrigin = draft.sourcePlanId
         activeMode = "HIIT"
         viewModelScope.launch {
             val id = repo.startHiit(
@@ -1784,12 +1931,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             }
         }
         val id = clockWorkoutId
+        val origin = hiitPlanOrigin
+        hiitPlanOrigin = null
         runningClock = false
         clock = null
         cues = emptyList()
         activeMode = null
         if (id != 0L) {
             repo.finish(id)
+            dropFinishedOrigin(origin)
             sessionGate.withLock {
                 if (activeMode == null) repo.clearActive()
             }
@@ -1839,6 +1989,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     running = runningClock,
                     remainingMs = remainingMs,
                     resumedAt = System.currentTimeMillis(),
+                    payload = hiitPlanOrigin?.let { encodeOrigin(it) },
                 ),
             )
         }
@@ -1905,9 +2056,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private suspend fun restore(loaded: Snapshot) {
         val active = loaded.active ?: return
         if (active.mode == "HIIT" && active.workoutId != null) {
+            hiitPlanOrigin = active.payload?.let { decodeOrigin(it) }
             val built = cuesFrom(loaded, active.workoutId)
             if (built.isEmpty()) {
                 repo.finish(active.workoutId)
+                dropFinishedOrigin(hiitPlanOrigin)
+                hiitPlanOrigin = null
                 repo.clearActive()
                 return
             }
@@ -1932,6 +2086,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             if (pos.finished) {
                 tones.horn()
                 repo.finish(active.workoutId)
+                dropFinishedOrigin(hiitPlanOrigin)
+                hiitPlanOrigin = null
                 repo.clearActive()
                 showLog(active.workoutId)
                 return
@@ -1990,6 +2146,31 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun snapshotBook(loaded: Snapshot): WorkoutBook {
+        val plans = loaded.plans.mapNotNull { row ->
+            decodePlan(row.body)?.let { com.vatsyahub.workout.domain.PlanRecord(row.id, row.kind, it) }
+        }
+        return WorkoutBook(
+            plans = plans,
+            logs = loaded.workouts.map { LogRecord(it.id, it.finished, it.kind) },
+            favourites = loaded.workouts.filter { it.favourite }.map { it.id },
+        )
+    }
+
+    private suspend fun dropFinishedOrigin(origin: Long?) {
+        if (origin == null) return
+        val book = snapshotBook(snap.value)
+        if (book.plans.none { it.id == origin }) return
+        val finished = book.copy(
+            active = HeldSession("STRENGTH", "Session", sourcePlanId = origin),
+        ).finishActive()
+        if (finished.favourites != book.favourites) return
+        if (finished.plans.any { it.id == origin }) return
+        val removed = book.plans.map { it.id }.toSet() - finished.plans.map { it.id }.toSet()
+        if (removed != setOf(origin)) return
+        repo.deletePlan(origin)
+    }
+
     private fun holdOf(draft: StrengthDraft): StrengthHold {
         val names = snap.value.exercises.associate { it.id to it.name }
         return StrengthHold(
@@ -2008,6 +2189,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 )
             },
             shown = draft.lines.map { it.shownIds.toList() },
+            sourcePlanId = draft.sourcePlanId,
         )
     }
 
@@ -2081,6 +2263,7 @@ private fun StrengthHold.toDraft(): StrengthDraft =
         },
         started = true,
         focus = focus.coerceAtLeast(0),
+        sourcePlanId = sourcePlanId,
     )
 
 fun exerciseKey(id: Long): String = "ex:$id"
