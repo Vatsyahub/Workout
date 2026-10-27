@@ -104,6 +104,9 @@ data class BuildState(
 data class ClockUi(
     val workoutId: Long,
     val remainingSec: Int,
+    val totalSec: Int,
+    val fraction: Float,
+    val work: Boolean,
     val running: Boolean,
     val now: String,
     val next: String,
@@ -1273,6 +1276,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         clock = ClockUi(
             workoutId = clockWorkoutId,
             remainingSec = ((remainingMs + 999) / 1000).toInt(),
+            totalSec = cue.seconds.coerceAtLeast(1),
+            fraction = if (cue.seconds <= 0) 0f else (remainingMs.toFloat() / (cue.seconds * 1000f)).coerceIn(0f, 1f),
+            work = cue.phase == PHASE_WORK,
             running = runningClock,
             now = if (cue.phase == PHASE_WORK) cue.name else "Rest",
             next = next,

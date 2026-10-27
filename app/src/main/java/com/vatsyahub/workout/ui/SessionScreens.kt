@@ -2,6 +2,7 @@ package com.vatsyahub.workout.ui
 
 import android.app.Activity
 import android.view.WindowManager
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +47,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -513,40 +518,78 @@ fun PickerScreen(model: AppModel) {
 fun ClockScreen(model: AppModel) {
     val clock = model.clock ?: return
     KeepScreenOn()
-    Box(
+    Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.align(Alignment.Center).fillMaxWidth()) {
-            Panel {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(clock.now.ifBlank { "HIIT" }, style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        if (clock.next.isBlank()) "Last interval" else "Next · ${clock.next}",
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    Text(
-                        formatDuration(clock.remainingSec),
-                        style = MaterialTheme.typography.displayLarge,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
+        Column(
+            Modifier.weight(1f).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            CountdownRing(clock.fraction, clock.work, formatDuration(clock.remainingSec))
+            Text(
+                clock.now.ifBlank { "HIIT" },
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+            if (clock.next.isNotBlank()) {
+                Text(
+                    clock.next,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 12.dp)) {
-            Box(Modifier.fillMaxWidth()) {
-                Control(Icons.Filled.SkipPrevious, "Back", 32.dp, Modifier.align(Alignment.CenterStart)) { model.backClock() }
-                Control(Icons.Filled.SkipNext, "Forward", 32.dp, Modifier.align(Alignment.CenterEnd)) { model.forwardClock() }
+        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Control(Icons.Filled.SkipPrevious, "Back", 32.dp, Modifier.align(Alignment.CenterStart)) { model.backClock() }
+            Control(Icons.Filled.SkipNext, "Forward", 32.dp, Modifier.align(Alignment.CenterEnd)) { model.forwardClock() }
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                 val playIcon = if (clock.running) Icons.Filled.Pause else Icons.Filled.PlayArrow
-                val playLabel = if (clock.running) "Pause" else "Play"
-                Control(playIcon, playLabel, 52.dp, Modifier.align(Alignment.Center)) { model.pauseClock() }
+                Control(playIcon, if (clock.running) "Pause" else "Play", 52.dp, Modifier) { model.pauseClock() }
+                Control(Icons.Filled.Stop, "Stop", 32.dp, Modifier.padding(top = 8.dp)) { model.stopClock() }
             }
-            Control(Icons.Filled.Stop, "Stop", 32.dp, Modifier.align(Alignment.CenterHorizontally)) { model.stopClock() }
         }
+    }
+}
+
+@Composable
+private fun CountdownRing(fraction: Float, work: Boolean, label: String) {
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    val arc = if (work) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    Box(Modifier.size(280.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 18.dp.toPx()
+            val inset = stroke / 2f
+            val diameter = size.minDimension - stroke
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = track,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = Size(diameter, diameter),
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            if (fraction > 0f) {
+                drawArc(
+                    color = arc,
+                    startAngle = -90f,
+                    sweepAngle = 360f * fraction.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Text(label, style = MaterialTheme.typography.displayLarge)
     }
 }
 
