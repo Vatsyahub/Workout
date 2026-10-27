@@ -343,10 +343,16 @@ fun BuildScreen(model: AppModel) {
                 )
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            ChoiceChip("Body part", build.mode == "PART") { model.setBuildMode("PART") }
-            ChoiceChip("Workout type", byType) { model.setBuildMode("TYPE") }
-            ChoiceChip("Pick exercises", picking) { model.setBuildMode("PICK") }
+        if (byType) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                ChoiceChip("Workout type", true) { model.setBuildMode("TYPE") }
+                ChoiceChip("Pick exercises", false) { model.setBuildMode("PICK") }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                ChoiceChip("Body part", build.mode == "PART") { model.setBuildMode("PART") }
+                ChoiceChip("Pick exercises", picking) { model.setBuildMode("PICK") }
+            }
         }
         if (picking) {
             Text(
@@ -462,6 +468,13 @@ fun BuildScreen(model: AppModel) {
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+            }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            if (byType) {
+                ChoiceChip("Body part", false) { model.setBuildMode("PART") }
+            } else {
+                ChoiceChip("Workout type", false) { model.setBuildMode("TYPE") }
             }
         }
         val canSavePlan = if (picking) build.picks.isNotEmpty() else build.parts.any { it.count > 0 }
