@@ -229,7 +229,7 @@ object StarterLibrary {
         StarterExercise("Treadmill Running", "Legs, Glutes, Cardiovascular System", "Legs, Lower, Full Body, Cardio", "BODYWEIGHT"),
         StarterExercise("Stationary Cycling", "Quadriceps, Glutes, Calves", "Legs, Lower, Cardio", "BODYWEIGHT"),
         StarterExercise("Air Bike", "Quadriceps, Glutes, Arms, Core", "Upper, Lower, Full Body, Cardio", "BODYWEIGHT"),
-        StarterExercise("Elliptical Trainer", "Legs, Glutes, Arms (if moving handles are used)", "Upper, Lower, Full Body, Cardio", "BODYWEIGHT"),
+        StarterExercise("Elliptical Trainer", "Legs, Glutes", "Upper, Lower, Full Body, Cardio", "BODYWEIGHT"),
         StarterExercise("Rowing Machine", "Back, Legs, Arms, Core", "Upper, Lower, Full Body, Cardio", "BODYWEIGHT"),
         StarterExercise("Ski Ergometer", "Back, Shoulders, Arms, Core", "Upper, Full Body, Cardio", "BODYWEIGHT"),
         StarterExercise("Swimming", "Shoulders, Back, Arms, Legs, Core", "Upper, Lower, Full Body, Cardio", "BODYWEIGHT"),
