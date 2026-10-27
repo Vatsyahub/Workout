@@ -128,7 +128,11 @@ fun StrengthScreen(model: AppModel) {
         Panel {
             Text(strengthLabel(draft.kind), style = MaterialTheme.typography.titleLarge)
             Text(
-                "Tap a set line to change sets and reps. Drag the handle to reorder.",
+                if (editing) {
+                    "Change the reps or weight, add or remove a set, add an exercise, then Save."
+                } else {
+                    "Tap a set line to change sets and reps. Drag the handle to reorder."
+                },
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -170,7 +174,7 @@ fun StrengthScreen(model: AppModel) {
                         }
                     }
                     handle()
-                    if (line.groupKind != "PICK") {
+                    if (!editing && line.groupKind != "PICK") {
                         IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
                         }
@@ -179,15 +183,21 @@ fun StrengthScreen(model: AppModel) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                CompactSets(
-                    formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
-                    showWeight,
-                    line.sets,
-                ) { model.replaceDraftSets(lineIndex, it) }
+                if (editing) {
+                    EditableSets(line.sets, showWeight, continuous = true) {
+                        model.replaceDraftSets(lineIndex, it)
+                    }
+                } else {
+                    CompactSets(
+                        formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                        showWeight,
+                        line.sets,
+                    ) { model.replaceDraftSets(lineIndex, it) }
+                }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
-        if (!handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
+        if (!editing && !handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
         if (!draft.logging && draft.editingPlanId == null && draft.lines.isNotEmpty()) {
             QuietButton("Save as Plan") { model.saveStrengthAsPlan() }
             if (model.planNote == "LINES") {
@@ -328,9 +338,14 @@ internal fun CompactSets(
 internal fun EditableSets(
     initial: List<DraftSet>,
     heavy: Boolean,
+    continuous: Boolean = false,
     onSave: (List<DraftSet>) -> Unit,
 ) {
     var rows by remember { mutableStateOf(editorSets(initial)) }
+    fun publish(next: List<EditorSet>) {
+        rows = next
+        if (continuous) onSave(next.savedDraft(initial))
+    }
     SetTableHeader(heavy)
     rows.forEachIndexed { index, row ->
         key(row.key) {
@@ -339,14 +354,16 @@ internal fun EditableSets(
                 reps = row.reps,
                 weight = row.weightKg,
                 heavy = heavy,
-                onRemove = { rows = rows.withoutSet(row.key) },
-                onReps = { reps -> rows = rows.withReps(row.key, reps) },
-                onWeight = { weight -> rows = rows.withWeight(row.key, weight) },
+                onRemove = { publish(rows.withoutSet(row.key)) },
+                onReps = { reps -> publish(rows.withReps(row.key, reps)) },
+                onWeight = { weight -> publish(rows.withWeight(row.key, weight)) },
             )
         }
     }
-    QuietButton("Add set") { rows = rows.withAddedSet() }
-    SoftButton("Save") { onSave(rows.savedDraft(initial)) }
+    QuietButton("Add set") { publish(rows.withAddedSet()) }
+    if (!continuous) {
+        SoftButton("Save") { onSave(rows.savedDraft(initial)) }
+    }
 }
 
 @Composable
@@ -381,7 +398,9 @@ fun SetRow(
         if (heavy) {
             Box(Modifier.weight(1.1f).padding(top = 4.dp, bottom = 4.dp)) {
                 BoxField(weight?.let { trimNumber(it) }.orEmpty(), placeholder = "kg") { text ->
-                    onWeight(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
+                    val trimmed = text.trim()
+                    if (trimmed.isEmpty()) onWeight(null)
+                    else parseDecimal(trimmed)?.let(onWeight)
                 }
             }
         }

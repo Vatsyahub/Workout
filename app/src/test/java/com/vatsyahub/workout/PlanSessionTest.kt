@@ -24,6 +24,7 @@ import com.vatsyahub.workout.domain.restored
 import com.vatsyahub.workout.domain.saveBuilderPlan
 import com.vatsyahub.workout.domain.startWorkout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -173,6 +174,34 @@ class PlanSessionTest {
         assertEquals(other, edited.plans.first { it.id == other.id })
         assertEquals(logs, edited.logs)
         assertEquals(listOf(favourite), edited.favourites)
+        assertNull(edited.active)
+    }
+
+    @Test
+    fun editedPlanSetsDifferFromTheOriginalAndAnAddedExerciseIsOnThePlan() {
+        val logs = listOf(LogRecord(3, finished = true, kind = "HEAVY", favourite = true))
+        val book = WorkoutBook(logs = logs, favourites = listOf(3L))
+            .saveBuilderPlan(BuilderDraft(kind = "HEAVY", mode = "LINES", lines = listOf(bench, row)))
+        val id = book.plans.single().id
+        val originalSets = book.plans.single().body.lines.first { it.exerciseId == bench.exerciseId }.sets
+        val curl = PlanLine(
+            exerciseId = 21,
+            name = "Curl",
+            sets = listOf(PlanSet(12, 14.0)),
+            groupKind = "PICK",
+        )
+        val editedSets = listOf(PlanSet(10, 65.0), PlanSet(4, 80.0), PlanSet(12, 20.0))
+        val edited = book.editPlan(
+            id,
+            listOf(bench.copy(sets = editedSets), curl),
+        )
+        val saved = edited.plans.single()
+        val savedBench = saved.body.lines.first { it.exerciseId == bench.exerciseId }
+        assertNotEquals(originalSets, savedBench.sets)
+        assertEquals(editedSets, savedBench.sets)
+        assertEquals(curl.sets, saved.body.lines.first { it.exerciseId == curl.exerciseId && it.name == "Curl" }.sets)
+        assertEquals(logs, edited.logs)
+        assertEquals(listOf(3L), edited.favourites)
         assertNull(edited.active)
     }
 
