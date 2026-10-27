@@ -32,7 +32,12 @@ import com.vatsyahub.workout.domain.PHASE_WARMUP
 import com.vatsyahub.workout.domain.PHASE_WORK
 import com.vatsyahub.workout.domain.Pass
 import com.vatsyahub.workout.domain.catchUp
-import com.vatsyahub.workout.domain.drawBodyPart
+import com.vatsyahub.workout.domain.DrawCard
+import com.vatsyahub.workout.domain.drawnOrder
+import com.vatsyahub.workout.domain.lineUse
+import com.vatsyahub.workout.domain.repsFor
+import com.vatsyahub.workout.domain.spreadType
+import com.vatsyahub.workout.domain.takeExact
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.fingerprint
@@ -107,6 +112,7 @@ data class BuildState(
     val parts: List<PartAsk>,
     val mode: String = "PART",
     val picks: List<StrengthLine> = emptyList(),
+    val picksDragged: Boolean = false,
 )
 
 data class ClockUi(
@@ -281,7 +287,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun setBuildMode(mode: String) {
         val picks = build.picks
-        build = buildFor(build.kind, mode).copy(picks = picks)
+        build = buildFor(build.kind, mode).copy(picks = picks, picksDragged = build.picksDragged)
     }
 
     private fun buildFor(kind: String, mode: String): BuildState {
@@ -318,32 +324,107 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         build = build.copy(parts = build.parts.filterIndexed { i, _ -> i != index })
     }
 
-    fun drawBuild() {
-        val pool = snap.value.pool(build.kind)
-        val lines = ArrayList<StrengthLine>()
-        for (ask in build.parts) {
-            if (ask.bodyPart.isBlank() || ask.count < 1) continue
-            val ids = if (build.mode == "TYPE") {
-                pool.filter { exercise ->
-                    snap.value.typesOf(exercise.id).any { it.name.equals(ask.bodyPart, true) }
-                }.map { it.id }
-            } else {
-                pool.filter { matchesBodyPart(it.bodyPart, ask.bodyPart) }.map { it.id }
-            }
-            drawBodyPart(ids, ask.count, Random).forEach { id ->
-                lines += StrengthLine(id, openingDraftSets(), ask.bodyPart, build.mode)
+    private fun drawCard(exercise: com.vatsyahub.workout.data.Exercise, key: Long = exercise.id): DrawCard =
+        DrawCard(
+            id = exercise.id,
+            name = exercise.name,
+            muscles = musclesOf(exercise.bodyPart),
+            types = snap.value.typesOf(exercise.id).map { it.name }.toSet(),
+            usage = exercise.usage,
+            key = key,
+        )
+
+    private fun lineCard(line: StrengthLine): DrawCard? {
+        val exercise = snap.value.exercises.find { it.id == line.exerciseId } ?: return null
+        return drawCard(exercise, line.key)
+    }
+
+    private fun prescribedSets(card: DrawCard, ordered: List<DrawCard>, kind: String): List<DraftSet> {
+        val heavy = lineUse(kind, card.usage) == "HEAVY"
+        return repsFor(card, ordered, kind, loggedReps(card.id, heavy)).map { DraftSet(it, null) }
+    }
+
+    private fun loggedReps(exerciseId: Long, asHeavy: Boolean): List<Int>? {
+        val loaded = snap.value
+        val kinds = if (asHeavy) setOf("HEAVY", "MIXED") else setOf("BODYWEIGHT", "MIXED")
+        val usage = loaded.exercises.find { it.id == exerciseId }?.usage
+        val sessions = loaded.workouts.filter { it.finished && it.kind in kinds }.sortedByDescending { it.performedAt }
+        for (workout in sessions) {
+            if (workout.kind == "MIXED" && asHeavy != (usage != "BODYWEIGHT")) continue
+            if (workout.kind == "HIIT") continue
+            val block = loaded.blocks.filter { it.workoutId == workout.id && it.exerciseId == exerciseId }
+                .maxByOrNull { it.position } ?: continue
+            val sets = loaded.sets.filter { it.blockId == block.id }.sortedBy { it.position }
+            if (sets.isEmpty()) continue
+            return sets.map { it.reps }
+        }
+        return null
+    }
+
+    private fun arrangePicks(lines: List<StrengthLine>, reorder: Boolean): List<StrengthLine> {
+        val cards = lines.mapNotNull { lineCard(it) }
+        if (cards.size != lines.size) return lines
+        val kind = classifyPickedKind(cards.map { it.usage }, build.kind)
+        if (!reorder) {
+            return lines.map { line ->
+                val card = cards.first { it.key == line.key }
+                if (line.setsEdited || line.sets != openingDraftSets()) line
+                else line.copy(sets = prescribedSets(card, cards, kind))
             }
         }
-        if (lines.isEmpty()) return
+        val ordered = drawnOrder(cards, kind, dragged = false)
+        return ordered.map { card ->
+            val line = lines.first { it.key == card.key }
+            if (line.setsEdited) line else line.copy(sets = prescribedSets(card, ordered, kind))
+        }
+    }
+
+    private fun orderDrawn(cards: List<DrawCard>, kind: String, dragged: Boolean): List<DrawCard> =
+        drawnOrder(cards, kind, dragged)
+
+    fun drawBuild() {
+        val pool = snap.value.pool(build.kind)
+        val used = HashSet<Long>()
+        val chosen = ArrayList<Pair<DrawCard, String>>()
+        for (ask in build.parts) {
+            if (ask.bodyPart.isBlank() || ask.count < 1) continue
+            val matching = pool.map { drawCard(it) }.filter { card ->
+                if (build.mode == "TYPE") {
+                    card.types.any { it.equals(ask.bodyPart, true) }
+                } else {
+                    matchesBodyPart(card.muscles.joinToString(", "), ask.bodyPart)
+                }
+            }
+            val picked = if (build.mode == "TYPE") {
+                spreadType(matching.filter { it.id !in used }, ask.count, Random)
+            } else {
+                takeExact(matching, ask.count, Random, used)
+            }
+            for (card in picked) {
+                if (!used.add(card.id)) continue
+                chosen += card to ask.bodyPart
+            }
+        }
+        if (chosen.isEmpty()) return
+        val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
+        val groups = chosen.toMap()
+        val lines = ordered.map { card ->
+            StrengthLine(
+                card.id,
+                prescribedSets(card, ordered, build.kind),
+                groups[card].orEmpty(),
+                build.mode,
+                key = lineKey(),
+            )
+        }
         strength = StrengthDraft(build.kind, LocalDate.now(), null, lines)
         open(Screen.Strength)
     }
 
     fun addPicked(exerciseId: Long) {
         if (snap.value.exercises.none { it.id == exerciseId }) return
-        build = build.copy(
-            picks = build.picks + StrengthLine(exerciseId, openingDraftSets(), groupKind = "PICK"),
-        )
+        val added = build.picks + StrengthLine(exerciseId, openingDraftSets(), groupKind = "PICK")
+        build = build.copy(picks = arrangePicks(added, reorder = !build.picksDragged))
     }
 
     fun removePicked(index: Int) {
@@ -360,7 +441,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (step == 0 || build.picks.isEmpty()) return false
         val to = (from + step).coerceIn(0, build.picks.lastIndex)
         if (to == from) return false
-        build = build.copy(picks = moveItem(build.picks, from, to))
+        val next = moveItem(build.picks, from, to)
+        build = build.copy(picks = next, picksDragged = true)
         pickDrag = to
         return true
     }
@@ -370,7 +452,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun movePicked(from: Int, to: Int) {
-        build = build.copy(picks = moveItem(build.picks, from, to))
+        val next = moveItem(build.picks, from, to)
+        build = build.copy(picks = next, picksDragged = build.picksDragged || next !== build.picks)
         pickDrag = null
     }
 
@@ -385,21 +468,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun addPickSet(line: Int) {
         val picks = build.picks.toMutableList()
         val row = picks.getOrNull(line) ?: return
-        picks[line] = row.copy(sets = row.sets + DraftSet(8, null))
+        picks[line] = row.copy(sets = row.sets + DraftSet(8, null), setsEdited = true)
         build = build.copy(picks = picks)
     }
 
     fun replacePickedSets(index: Int, sets: List<DraftSet>) {
         val picks = build.picks.toMutableList()
         val line = picks.getOrNull(index) ?: return
-        picks[index] = line.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) })
+        picks[index] = line.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) }, setsEdited = true)
         build = build.copy(picks = picks)
     }
 
     fun removePickSet(line: Int, set: Int) {
         val picks = build.picks.toMutableList()
         val row = picks.getOrNull(line) ?: return
-        picks[line] = row.copy(sets = row.sets.filterIndexed { index, _ -> index != set })
+        picks[line] = row.copy(sets = row.sets.filterIndexed { index, _ -> index != set }, setsEdited = true)
         build = build.copy(picks = picks)
     }
 
@@ -409,7 +492,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val sets = row.sets.toMutableList()
         val current = sets.getOrNull(set) ?: return
         sets[set] = change(current)
-        picks[line] = row.copy(sets = sets)
+        picks[line] = row.copy(sets = sets, setsEdited = true)
         build = build.copy(picks = picks)
     }
 
@@ -504,7 +587,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val sets = row.sets.toMutableList()
         val current = sets.getOrNull(set) ?: return
         sets[set] = change(current)
-        lines[line] = row.copy(sets = sets)
+        lines[line] = row.copy(sets = sets, setsEdited = true)
         strength = draft.copy(lines = lines)
     }
 
@@ -512,7 +595,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = strength ?: return
         val lines = draft.lines.toMutableList()
         val row = lines.getOrNull(line) ?: return
-        lines[line] = row.copy(sets = row.sets + DraftSet(8, null))
+        lines[line] = row.copy(sets = row.sets + DraftSet(8, null), setsEdited = true)
         strength = draft.copy(lines = lines)
     }
 
@@ -520,7 +603,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = strength ?: return
         val lines = draft.lines.toMutableList()
         val row = lines.getOrNull(line) ?: return
-        lines[line] = row.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) })
+        lines[line] = row.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) }, setsEdited = true)
         strength = draft.copy(lines = lines)
     }
 
@@ -528,7 +611,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = strength ?: return
         val lines = draft.lines.toMutableList()
         val row = lines.getOrNull(line) ?: return
-        lines[line] = row.copy(sets = row.sets.filterIndexed { index, _ -> index != set })
+        lines[line] = row.copy(sets = row.sets.filterIndexed { index, _ -> index != set }, setsEdited = true)
         strength = draft.copy(lines = lines)
     }
 
@@ -584,31 +667,47 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (row.groupKind == "PICK") return
         val ids = rerollIds(draft.kind, row)
         if (ids.isEmpty()) return
-        val next = rerollOne(ids, row.exerciseId, Random)
+        val next = rerollOne(ids.filter { id -> draft.lines.none { it.exerciseId == id && it.key != row.key } }, row.exerciseId, Random)
         val lines = draft.lines.toMutableList()
-        lines[line] = row.copy(exerciseId = next)
-        strength = draft.copy(lines = lines)
+        lines[line] = row.copy(exerciseId = next, setsEdited = false)
+        val cards = lines.mapNotNull { lineCard(it) }
+        val refreshed = lines.map { line ->
+            val card = cards.find { it.key == line.key } ?: return@map line
+            if (line.key != row.key || line.setsEdited) line else line.copy(sets = prescribedSets(card, cards, draft.kind))
+        }
+        strength = draft.copy(lines = refreshed)
     }
 
     fun rerollDraftAll() {
         val draft = strength ?: return
-        val indexes = draft.lines.indices
-            .filter { draft.lines[it].groupKind != "PICK" }
-            .groupBy { index ->
-                val row = draft.lines[index]
-                row.groupKind to row.group.ifBlank {
-                    snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart
-                }
+        val picks = draft.lines.filter { it.groupKind == "PICK" }
+        val used = picks.map { it.exerciseId }.toMutableSet()
+        val redrawn = ArrayList<StrengthLine>()
+        val groups = draft.lines.filter { it.groupKind != "PICK" }.groupBy { it.groupKind to it.group }
+        for ((_, rows) in groups) {
+            val sample = rows.first()
+            val pool = rerollIds(draft.kind, sample).mapNotNull { id ->
+                snap.value.exercises.find { it.id == id }?.let { drawCard(it) }
+            }.filter { it.id !in used }
+            val picked = if (sample.groupKind == "TYPE") {
+                spreadType(pool, rows.size, Random)
+            } else {
+                takeExact(pool, rows.size, Random, used)
             }
-        val ids = draft.lines.map { it.exerciseId }.toMutableList()
-        for ((key, group) in indexes) {
-            val sample = draft.lines[group.first()]
-            val pool = rerollIds(draft.kind, sample)
-            if (pool.isEmpty() || key.second == null) continue
-            val next = rerollAll(group.map { ids[it] }, pool, Random)
-            group.zip(next).forEach { (index, id) -> ids[index] = id }
+            for (card in picked) {
+                if (!used.add(card.id)) continue
+                redrawn += StrengthLine(card.id, emptyList(), sample.group, sample.groupKind)
+            }
         }
-        strength = draft.copy(lines = draft.lines.mapIndexed { index, line -> line.copy(exerciseId = ids[index]) })
+        val combined = redrawn + picks
+        val cards = combined.mapNotNull { lineCard(it) }
+        val orderedCards = drawnOrder(cards, draft.kind, dragged = false)
+        val lines = orderedCards.map { card ->
+            val line = combined.first { it.key == card.key }
+            if (line.groupKind == "PICK" && line.setsEdited) line
+            else line.copy(sets = prescribedSets(card, orderedCards, draft.kind), setsEdited = line.setsEdited && line.groupKind == "PICK")
+        }
+        strength = draft.copy(lines = lines, focus = draft.focus.coerceIn(0, (lines.size - 1).coerceAtLeast(0)))
     }
 
     fun saveStrength() {

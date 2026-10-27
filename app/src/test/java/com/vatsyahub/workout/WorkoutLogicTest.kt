@@ -9,7 +9,14 @@ import com.vatsyahub.workout.domain.bestsReport
 import com.vatsyahub.workout.domain.catchUp
 import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.coveredMetres
+import com.vatsyahub.workout.domain.DrawCard
+import com.vatsyahub.workout.domain.defaultReps
+import com.vatsyahub.workout.domain.drawnOrder
 import com.vatsyahub.workout.domain.dragSteps
+import com.vatsyahub.workout.domain.largestMuscle
+import com.vatsyahub.workout.domain.repsFor
+import com.vatsyahub.workout.domain.spreadType
+import com.vatsyahub.workout.domain.takeExact
 import com.vatsyahub.workout.domain.dropIndex
 import com.vatsyahub.workout.domain.orderNumber
 import com.vatsyahub.workout.domain.shiftForDrag
@@ -423,6 +430,64 @@ class WorkoutLogicTest {
         assertEquals(1, orderNumber(1, 0, 2))
         assertEquals(2, orderNumber(2, 0, 2))
     }
+
+    @Test
+    fun drawFollowsHisCountsThenOrdersTheList() {
+        val lat = card(1, "Lat Pulldown", listOf("Lats"), setOf("Pull"), "HEAVY")
+        val row = card(2, "Seated Row", listOf("Upper Back"), setOf("Pull"), "HEAVY")
+        val curl = card(3, "Barbell Curl", listOf("Biceps"), setOf("Pull"), "HEAVY")
+        val rear = card(4, "Reverse Fly", listOf("Rear Deltoids"), setOf("Pull"), "HEAVY")
+        val pool = listOf(lat, row, curl, rear)
+        val three = spreadType(pool, 3, Random(1)).map { it.name }
+        assertEquals(listOf("Lat Pulldown", "Seated Row", "Barbell Curl"), three)
+        assertFalse(three.contains("Reverse Fly"))
+        val two = spreadType(pool, 2, Random(1)).map { it.name }
+        assertEquals(listOf("Lat Pulldown", "Seated Row"), two)
+        val bench = card(5, "Barbell Bench Press", listOf("Chest", "Triceps"), setOf("Push"), "HEAVY")
+        val fly = card(6, "Chest Fly", listOf("Chest"), setOf("Push"), "HEAVY")
+        val pushUp = card(7, "Push-Ups", listOf("Chest", "Triceps"), setOf("Push"), "BODYWEIGHT")
+        val squat = card(8, "Back Squat", listOf("Quadriceps"), setOf("Legs"), "HEAVY")
+        val extension = card(9, "Leg Extension", listOf("Quadriceps"), setOf("Legs"), "HEAVY")
+        val raise = card(10, "Lateral Raise", listOf("Side Deltoids"), setOf("Push"), "HEAVY")
+        val overhead = card(11, "Overhead Press", listOf("Shoulders", "Triceps"), setOf("Push"), "HEAVY")
+        val spine = card(12, "Back Extension", listOf("Lower Back"), setOf("Pull"), "HEAVY")
+        val hinge = card(13, "Romanian Deadlift", listOf("Hamstrings"), setOf("Pull"), "HEAVY")
+        val ordered = orderNames(listOf(curl, row, lat, pushUp, bench, fly, extension, squat, raise, overhead, hinge, spine))
+        assertTrue(ordered.indexOf("Lat Pulldown") < ordered.indexOf("Barbell Curl"))
+        assertTrue(ordered.indexOf("Seated Row") < ordered.indexOf("Barbell Curl"))
+        assertTrue(ordered.indexOf("Barbell Bench Press") < ordered.indexOf("Push-Ups"))
+        assertTrue(ordered.indexOf("Barbell Bench Press") < ordered.indexOf("Chest Fly"))
+        assertTrue(ordered.indexOf("Back Squat") < ordered.indexOf("Leg Extension"))
+        assertTrue(ordered.indexOf("Overhead Press") < ordered.indexOf("Lateral Raise"))
+        assertTrue(ordered.indexOf("Back Extension") < ordered.indexOf("Back Squat"))
+        assertTrue(ordered.indexOf("Back Extension") < ordered.indexOf("Romanian Deadlift"))
+        val spineAt = ordered.indexOf("Back Extension")
+        val squatAt = ordered.indexOf("Back Squat")
+        val hingeAt = ordered.indexOf("Romanian Deadlift")
+        assertTrue(kotlin.math.abs(spineAt - squatAt) > 1)
+        assertTrue(kotlin.math.abs(spineAt - hingeAt) > 1)
+        val dragged = listOf(curl, lat, row)
+        assertEquals(listOf("Barbell Curl", "Lat Pulldown", "Seated Row"), drawnOrder(dragged, "HEAVY", dragged = true).map { it.name })
+        assertEquals(setOf(5L, 6L), takeExact(listOf(bench, fly), 2, Random(2), emptySet()).map { it.id }.toSet())
+        assertEquals(listOf(6L), takeExact(listOf(bench, fly, lat), 1, Random(2), setOf(5L, 1L)).map { it.id })
+        assertEquals(listOf(1L), takeExact(listOf(lat), 3, Random(1), emptySet()).map { it.id })
+        val session = listOf(bench, fly, pushUp, raise)
+        assertEquals(6, defaultReps(bench, orderOf(session), "HEAVY"))
+        assertEquals(10, defaultReps(fly, orderOf(session), "HEAVY"))
+        assertEquals(8, defaultReps(pushUp, orderOf(listOf(pushUp, bench)), "MIXED"))
+        assertEquals(10, defaultReps(raise, orderOf(session), "HEAVY"))
+        assertEquals(12, defaultReps(pushUp, orderOf(listOf(bench, pushUp)), "BODYWEIGHT"))
+        assertEquals(listOf(4, 4, 2), repsFor(bench, orderOf(session), "HEAVY", listOf(4, 4, 2)))
+        assertEquals("pecs", largestMuscle(bench.muscles))
+        assertEquals("lats", largestMuscle(listOf("Lats", "Biceps")))
+    }
+
+    private fun card(id: Long, name: String, muscles: List<String>, types: Set<String>, usage: String) =
+        DrawCard(id, name, muscles, types, usage)
+
+    private fun orderOf(cards: List<DrawCard>) = drawnOrder(cards, "HEAVY", dragged = false)
+
+    private fun orderNames(cards: List<DrawCard>) = orderOf(cards).map { it.name }
 
     @Test
     fun starterLibraryKeepsEveryListedExercise() {

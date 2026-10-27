@@ -18,6 +18,7 @@ data class StrengthLine(
     val group: String = "",
     val groupKind: String = "PART",
     val key: Long = lineKey(),
+    val setsEdited: Boolean = false,
 )
 
 data class StrengthDraft(
