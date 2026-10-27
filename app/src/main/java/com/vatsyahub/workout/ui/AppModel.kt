@@ -51,6 +51,7 @@ sealed interface Screen {
     data object LogType : Screen
     data object Build : Screen
     data object Strength : Screen
+    data object StrengthTime : Screen
     data object Hiit : Screen
     data object PatternPick : Screen
     data object PatternEdit : Screen
@@ -58,6 +59,7 @@ sealed interface Screen {
     data object Clock : Screen
     data object Picker : Screen
     data object OutingTimer : Screen
+    data class OutingReady(val name: String) : Screen
     data object OutingForm : Screen
     data object Logs : Screen
     data class Month(val year: Int, val month: Int) : Screen
@@ -164,6 +166,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (stack.size == 1 && stack.first() == screen) return
         stack.clear()
         stack.add(screen)
+    }
+
+    fun openNamedOuting(name: String) {
+        if (busy()) return
+        open(Screen.OutingReady(name))
     }
 
     fun startNamedOuting(name: String) {

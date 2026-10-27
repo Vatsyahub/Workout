@@ -123,16 +123,16 @@ fun HomeScreen(model: AppModel) {
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
             StartCard(Icons.Filled.Timer, "HIIT", "Intervals", Modifier.weight(1f)) { model.newHiit(manual = false) }
-            StartCard(Icons.Filled.Pool, "Swim", "In the water", Modifier.weight(1f)) { model.startNamedOuting("Swim") }
+            StartCard(Icons.Filled.Pool, "Swim", "In the water", Modifier.weight(1f)) { model.openNamedOuting("Swim") }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
             StartCard(Icons.AutoMirrored.Filled.DirectionsRun, "Run", "On the road", Modifier.weight(1f)) {
-                model.startNamedOuting("Run")
+                model.openNamedOuting("Run")
             }
-            StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.startNamedOuting("Hike") }
+            StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.openNamedOuting("Hike") }
         }
         SectionLabel("Recent")
         if (recent.isEmpty()) {

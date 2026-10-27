@@ -73,27 +73,13 @@ fun StrengthScreen(model: AppModel) {
     val chooseDate = pickDate(draft.day) { model.setDraftDay(it) }
     val exerciseCount = draft.lines.size
     val totalReps = draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }
-    ActionPage("Finish", { model.saveStrength() }) {
+    ActionPage("Mark as finished", { model.open(Screen.StrengthTime) }) {
         Panel {
             Text(if (heavy) "Heavy" else "Bodyweight", style = MaterialTheme.typography.titleLarge)
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 StatTile("Date", dayText(draft.day), Modifier.weight(1f), chooseDate)
                 StatTile("Exercises", exerciseCount.toString(), Modifier.weight(1f))
                 StatTile("Reps", totalReps.toString(), Modifier.weight(1f))
-            }
-            Text(
-                "Time",
-                color = MaterialTheme.colorScheme.secondary,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Editable(
-                draft.durationSec?.let { formatDuration(it) } ?: "Add a time",
-                durationRaw(draft.durationSec),
-                style = MaterialTheme.typography.titleLarge,
-                number = true,
-            ) { text ->
-                model.setDraftDuration(parseDuration(text, true))
             }
         }
         if (draft.lines.isEmpty()) {
@@ -131,7 +117,6 @@ fun StrengthScreen(model: AppModel) {
                             )
                             Text(line.group, color = MaterialTheme.colorScheme.secondary)
                         }
-                        Text("Tap the name to choose a replacement", color = MaterialTheme.colorScheme.secondary)
                     }
                     IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
@@ -158,6 +143,18 @@ fun StrengthScreen(model: AppModel) {
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         QuietButton("Reroll all") { model.rerollDraftAll() }
+    }
+}
+
+@Composable
+fun StrengthTimeScreen(model: AppModel) {
+    val draft = model.strength ?: return
+    var time by remember { mutableStateOf(durationRaw(draft.durationSec)) }
+    ActionPage("Mark as finished", {
+        model.setDraftDuration(time.trim().ifEmpty { null }?.let { parseDuration(it, true) })
+        model.saveStrength()
+    }) {
+        Field("Total time", time, number = true) { time = it }
     }
 }
 
@@ -479,6 +476,13 @@ fun ClockScreen(model: AppModel) {
             }
             Control(Icons.Filled.Stop, "Stop", 32.dp, Modifier.align(Alignment.CenterHorizontally)) { model.stopClock() }
         }
+    }
+}
+
+@Composable
+fun OutingReadyScreen(model: AppModel, name: String) {
+    ActionPage("Start", { model.startNamedOuting(name) }) {
+        Text(name, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

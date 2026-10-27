@@ -94,6 +94,7 @@ private fun titleOf(screen: Screen, model: AppModel): String = when (screen) {
     Screen.LogType -> "Log a workout"
     Screen.Build -> if (model.build.kind == "HEAVY") "Heavy" else "Bodyweight"
     Screen.Strength -> if (model.strength?.kind == "BODYWEIGHT") "Bodyweight" else "Heavy"
+    Screen.StrengthTime -> "Total time"
     Screen.Hiit -> "HIIT"
     Screen.PatternPick -> "Pattern"
     Screen.PatternEdit -> "Edit pattern"
@@ -111,6 +112,7 @@ private fun titleOf(screen: Screen, model: AppModel): String = when (screen) {
     Screen.ReportExercises -> "Exercises"
     is Screen.ExerciseReport -> screen.title
     Screen.Bests -> "Bests"
+    is Screen.OutingReady -> screen.name
     else -> ""
 }
 
@@ -136,6 +138,7 @@ private fun ScreenBody(model: AppModel, screen: Screen) {
         Screen.LogType -> LogTypeScreen(model)
         Screen.Build -> BuildScreen(model)
         Screen.Strength -> StrengthScreen(model)
+        Screen.StrengthTime -> StrengthTimeScreen(model)
         Screen.Hiit -> HiitScreen(model)
         Screen.PatternPick -> PatternPickScreen(model)
         Screen.PatternEdit -> PatternEditScreen(model)
@@ -143,6 +146,7 @@ private fun ScreenBody(model: AppModel, screen: Screen) {
         Screen.Clock -> ClockScreen(model)
         Screen.Picker -> PickerScreen(model)
         Screen.OutingTimer -> OutingTimerScreen(model)
+        is Screen.OutingReady -> OutingReadyScreen(model, screen.name)
         Screen.OutingForm -> OutingFormScreen(model)
         Screen.Logs -> LogsScreen(model)
         is Screen.Month -> MonthScreen(model, screen.year, screen.month)
