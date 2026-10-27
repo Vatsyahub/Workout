@@ -91,6 +91,9 @@ fun StrengthScreen(model: AppModel) {
                             "Body part · ${exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None"}",
                             color = MaterialTheme.colorScheme.secondary,
                         )
+                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                            Text("Workout type · ${line.group}", color = MaterialTheme.colorScheme.secondary)
+                        }
                         Text("Tap the name to choose a replacement", color = MaterialTheme.colorScheme.secondary)
                     }
                     IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
@@ -304,16 +307,23 @@ fun PickerScreen(model: AppModel) {
     Page {
         when (request) {
             is Picker.StrengthSwap -> {
-                val kind = model.strength?.kind ?: "HEAVY"
+                val line = model.strength?.lines?.getOrNull(request.line)
+                val fromType = line?.groupKind == "TYPE" && line.group.isNotBlank()
                 Text(
-                    "Choose a replacement exercise.",
+                    if (fromType) {
+                        "Exercises in ${line?.group}. Tap one to use it here."
+                    } else {
+                        "Any exercise in this workout. Tap one to use it here."
+                    },
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                 )
-                snap.pool(kind)
+                model.lineChoices(request.line)
                     .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
                     .forEach { exercise ->
-                        Word("${exercise.name} · ${exercise.bodyPart}") { model.pickExercise(exercise.id) }
+                        Word(
+                            if (exercise.bodyPart.isBlank()) exercise.name else "${exercise.name} · ${exercise.bodyPart}",
+                        ) { model.pickExercise(exercise.id) }
                     }
             }
             is Picker.HiitSwap -> {

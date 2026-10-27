@@ -225,14 +225,29 @@ fun BuildScreen(model: AppModel) {
         return
     }
     ActionPage("Build", { model.drawBuild() }) {
+        val byType = build.mode == "TYPE"
         Text(
-            "Choose how many exercises per body part. 0 skips that part.",
+            if (byType) {
+                "Choose how many exercises per workout type. 0 skips that type."
+            } else {
+                "Choose how many exercises per body part. 0 skips that part."
+            },
             color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
         )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            ChoiceChip("Body part", !byType) { model.setBuildMode("PART") }
+            ChoiceChip("Workout type", byType) { model.setBuildMode("TYPE") }
+        }
         if (build.parts.isEmpty()) {
             Panel {
-                Text("These exercises have no body part yet.")
+                Text(
+                    if (byType) {
+                        "No workout types yet. Add a type on an exercise, then come back."
+                    } else {
+                        "These exercises have no body part yet."
+                    },
+                )
             }
         }
         build.parts.forEachIndexed { index, part ->
@@ -240,7 +255,7 @@ fun BuildScreen(model: AppModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Body part",
+                            if (byType) "Workout type" else "Body part",
                             color = MaterialTheme.colorScheme.secondary,
                             style = MaterialTheme.typography.labelLarge,
                         )
