@@ -6,7 +6,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.vatsyahub.workout.domain.musclesWithoutMovingHandleArms
 
 @Database(
     entities = [
@@ -74,42 +73,14 @@ abstract class WorkoutDatabase : RoomDatabase() {
 
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                val cursor = db.query(
+                db.execSQL(
                     """
-                    SELECT e.id AS id, e.name AS name, e.bodyPart AS bodyPart, e.usage AS usage,
-                        IFNULL((
-                            SELECT group_concat(t.name, ', ')
-                            FROM exercise_types l
-                            JOIN workout_types t ON t.id = l.typeId
-                            WHERE l.exerciseId = e.id
-                        ), '') AS types
-                    FROM exercises e
+                    UPDATE exercises
+                    SET bodyPart = 'Legs, Glutes'
+                    WHERE name = 'Elliptical Trainer'
+                    AND bodyPart = 'Legs, Glutes, Arms (if moving handles are used)'
                     """.trimIndent(),
                 )
-                val updates = ArrayList<Pair<Long, String>>()
-                cursor.use { rows ->
-                    val idCol = rows.getColumnIndexOrThrow("id")
-                    val nameCol = rows.getColumnIndexOrThrow("name")
-                    val partCol = rows.getColumnIndexOrThrow("bodyPart")
-                    val useCol = rows.getColumnIndexOrThrow("usage")
-                    val typeCol = rows.getColumnIndexOrThrow("types")
-                    while (rows.moveToNext()) {
-                        val body = rows.getString(partCol).orEmpty()
-                        val next = musclesWithoutMovingHandleArms(
-                            body,
-                            rows.getString(nameCol).orEmpty(),
-                            rows.getString(typeCol).orEmpty(),
-                            rows.getString(useCol).orEmpty(),
-                        )
-                        if (next != body) updates += rows.getLong(idCol) to next
-                    }
-                }
-                for ((id, body) in updates) {
-                    db.execSQL(
-                        "UPDATE exercises SET bodyPart = ? WHERE id = ?",
-                        arrayOf<Any>(body, id),
-                    )
-                }
             }
         }
 

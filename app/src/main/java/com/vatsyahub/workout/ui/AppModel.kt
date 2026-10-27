@@ -72,9 +72,9 @@ import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.repeatStrength
-import com.vatsyahub.workout.domain.repairAssignment
 import com.vatsyahub.workout.domain.rerollAll
 import com.vatsyahub.workout.domain.rerollInSlot
+import com.vatsyahub.workout.domain.rerollOne
 import com.vatsyahub.workout.domain.shapeForKindName
 import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.stepExercise
@@ -817,22 +817,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             } else {
                 takeExact(pool, rows.size, Random, used)
             }
-            val poolIds = pool.map { it.id }
-            val assigned = List(rows.size) { index -> picked.getOrNull(index)?.id ?: rows[index].exerciseId }
-            val rolls = repairAssignment(
-                assigned,
-                rows.map { row -> (row.shownIds + row.exerciseId).toList() },
-                poolIds,
-                Random,
-            )
-            rows.zip(rolls).forEach { (row, roll) ->
-                if (!used.add(roll.id)) return@forEach
-                redrawn += row.copy(
-                    exerciseId = roll.id,
-                    sets = emptyList(),
-                    setsEdited = false,
-                    shownIds = roll.shown.toSet(),
-                )
+            for (card in picked) {
+                if (!used.add(card.id)) continue
+                redrawn += StrengthLine(card.id, emptyList(), sample.group, sample.groupKind)
             }
         }
         val combined = redrawn + picks
@@ -1197,18 +1184,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val ids = snap.value.pool("HIIT").map { it.id }
         hiit = draft.copy(
             sets = draft.sets.map { set ->
-                val drawn = drawSet(pool, set.exerciseIds.size, Random)
-                val assigned = List(set.exerciseIds.size) { index ->
-                    drawn.getOrElse(index) { set.exerciseIds[index] }
+                val drawn = drawSet(pool, set.exerciseIds.size, Random).toMutableList()
+                set.exerciseIds.forEachIndexed { index, current ->
+                    if (drawn.getOrNull(index) == current && index < drawn.size) {
+                        drawn[index] = rerollOne(ids, current, Random)
+                    }
                 }
-                val histories = set.exerciseIds.mapIndexed { index, current ->
-                    (set.shownIds.getOrElse(index) { emptySet() } + current).toList()
-                }
-                val rolls = repairAssignment(assigned, histories, ids, Random)
-                set.copy(
-                    exerciseIds = rolls.map { it.id },
-                    shownIds = rolls.map { it.shown.toSet() },
-                ).aligned(draft.workSec, set.breakSeconds)
+                set.copy(exerciseIds = drawn, shownIds = drawn.map { setOf(it) }).aligned(draft.workSec, set.breakSeconds)
             },
         )
     }

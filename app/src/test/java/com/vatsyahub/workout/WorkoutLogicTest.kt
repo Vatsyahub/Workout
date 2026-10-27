@@ -42,12 +42,8 @@ import com.vatsyahub.workout.domain.withFavourite
 import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
 import com.vatsyahub.workout.domain.patternLabel
-import com.vatsyahub.workout.domain.isArmsMuscle
-import com.vatsyahub.workout.domain.musclesWithoutMovingHandleArms
-import com.vatsyahub.workout.domain.repairAssignment
 import com.vatsyahub.workout.domain.rerollInSlot
 import com.vatsyahub.workout.domain.rerollOne
-import com.vatsyahub.workout.domain.usesMovingHandles
 import com.vatsyahub.workout.domain.roundsOf
 import com.vatsyahub.workout.domain.stepExercise
 import com.vatsyahub.workout.domain.swimPaceSeconds
@@ -185,71 +181,7 @@ class WorkoutLogicTest {
         assertEquals(7L, rerollInSlot(listOf(7L), 0, listOf(7L), setOf(7L), Random(1))!!.ids.single())
     }
 
-    @Test
-    fun movingHandlesDropArmsAndLeaveEveryOtherMuscle() {
-        val note = "Legs, Glutes, Arms (if moving handles are used)"
-        assertEquals("Legs, Glutes", musclesWithoutMovingHandleArms(note, "Elliptical Trainer"))
-        assertEquals(
-            "Legs, Forearms, Glutes, Core",
-            musclesWithoutMovingHandleArms(
-                "Legs, Forearms, Arms (if moving handles are used), Core",
-                "Elliptical Trainer",
-            ),
-        )
-        assertEquals(
-            "Legs, Glutes",
-            musclesWithoutMovingHandleArms("Legs, Glutes, Arms", name = "Bike with moving handles"),
-        )
-        val boxing = "Shoulders, Arms, Core, Legs"
-        assertEquals(boxing, musclesWithoutMovingHandleArms(boxing, "Shadow Boxing"))
-        val rowing = "Back, Legs, Arms, Core"
-        assertEquals(rowing, musclesWithoutMovingHandleArms(rowing, "Rowing Machine"))
-        val farmer = "Traps, Forearms, Core, Legs"
-        assertEquals(farmer, musclesWithoutMovingHandleArms(farmer, "Farmer's Walk"))
-        val cross = "Legs, Glutes, Arms"
-        assertEquals(cross, musclesWithoutMovingHandleArms(cross, "Cross-Trainer Intervals"))
-        val library = listOf(
-            "Elliptical Trainer" to note,
-            "Elliptical Trainer" to "Legs, Glutes, Arms (if moving handles are used), Core",
-            "Shadow Boxing" to boxing,
-            "Rowing Machine" to rowing,
-            "Farmer's Walk" to farmer,
-            "Cross-Trainer Intervals" to cross,
-        )
-        val fixed = library.map { (name, muscles) -> musclesWithoutMovingHandleArms(muscles, name) }
-        assertEquals("Legs, Glutes", fixed[0])
-        assertEquals("Legs, Glutes, Core", fixed[1])
-        assertEquals(library.drop(2).map { it.second }, fixed.drop(2))
-        val seeded = StarterLibrary.rows.filter { it.name == "Elliptical Trainer" }
-        assertEquals(listOf("Legs", "Glutes"), seeded.map { musclesOf(it.muscles) }.distinct().single())
-        assertTrue(seeded.none { musclesOf(it.muscles).any(::isArmsMuscle) })
-        assertTrue(StarterLibrary.rows.any { row -> musclesOf(row.muscles).any(::isArmsMuscle) })
-        assertTrue(
-            StarterLibrary.rows.none { row ->
-                usesMovingHandles(row.name, row.muscles, row.types, row.usage) &&
-                    musclesOf(row.muscles).any(::isArmsMuscle)
-            },
-        )
-    }
 
-    @Test
-    fun fullRerollDoesNotHandASlotAnExerciseItAlreadyShowed() {
-        val matches = listOf(1L, 2L, 3L, 4L)
-        repeat(25) { seed ->
-            val fixed = repairAssignment(
-                assigned = listOf(1L, 2L),
-                histories = listOf(listOf(1L), listOf(2L)),
-                matches = matches,
-                random = Random(seed),
-            )
-            assertTrue(fixed[0].id != 1L)
-            assertTrue(fixed[1].id != 2L)
-            assertEquals(2, fixed.map { it.id }.distinct().size)
-            assertTrue(fixed.all { it.id in matches })
-        }
-        val only = repairAssignment(listOf(1L), listOf(listOf(1L)), listOf(1L), Random(1))
-        assertEquals(1L, only.single().id)
-    }
 
     @Test
     fun paceClimbAndCarryDistance() {

@@ -58,60 +58,6 @@ fun rerollAll(current: List<Long>, pool: List<Long>, random: Random): List<Long>
     }
 }
 
-data class RerollPick(val id: Long, val shown: List<Long>)
-
-/**
- * Keeps a rebuilt list, but does not hand a slot an exercise it has already shown
- * while another match is free.
- */
-fun repairAssignment(
-    assigned: List<Long>,
-    histories: List<List<Long>>,
-    matches: List<Long>,
-    random: Random,
-): List<RerollPick> {
-    val options = matches.distinct().toSet()
-    val ids = assigned.toMutableList()
-    val counts = HashMap<Long, Int>()
-    for (id in ids) if (id in options) counts[id] = (counts[id] ?: 0) + 1
-    fun held(id: Long) = (counts[id] ?: 0) > 0
-    fun release(id: Long) {
-        val left = (counts[id] ?: 0) - 1
-        if (left <= 0) counts.remove(id) else counts[id] = left
-    }
-    fun hold(id: Long) {
-        counts[id] = (counts[id] ?: 0) + 1
-    }
-    for (index in ids.indices) {
-        val seen = histories.getOrElse(index) { emptyList() }.filter { it in options }.toSet()
-        val current = ids[index]
-        if (current !in seen) continue
-        if (current in options) release(current)
-        val choices = options.filter { it != current && !held(it) && it !in seen }
-        val replacement = if (choices.isEmpty()) null else choices.random(random)
-        if (replacement == null) {
-            if (current in options) hold(current)
-            continue
-        }
-        ids[index] = replacement
-        hold(replacement)
-    }
-    val optionList = options.toList()
-    return List(ids.size) { index ->
-        val seen = histories.getOrElse(index) { emptyList() }.filter { it in options }.distinct()
-        val chosen = ids[index]
-        if (optionList.isNotEmpty() && optionList.all { it in seen }) {
-            RerollPick(chosen, listOf(chosen))
-        } else {
-            RerollPick(chosen, (seen + chosen).distinct())
-        }
-    }
-}
-
-/**
- * Fills one HIIT set. Prefers a workout type not already used in the set.
- * Exercises stay unique inside the set. The same exercise may be drawn again in a later set.
- */
 fun drawSet(pool: List<PoolExercise>, count: Int, random: Random): List<Long> {
     if (pool.isEmpty() || count <= 0) return emptyList()
     val picked = ArrayList<Long>(count)

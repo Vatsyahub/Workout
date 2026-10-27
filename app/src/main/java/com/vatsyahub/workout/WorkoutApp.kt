@@ -18,9 +18,6 @@ class WorkoutApp : Application() {
         super.onCreate()
         val database = WorkoutDatabase.create(this)
         repository = Repository(database)
-        appScope.launch {
-            repository.dropArmsFromMovingHandles()
-            repository.seedIfEmpty()
-        }
+        appScope.launch { repository.seedIfEmpty() }
     }
 }
