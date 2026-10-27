@@ -570,19 +570,18 @@ fun ExercisesScreen(model: AppModel) {
                     "${snap.exercises.size} saved",
                     color = MaterialTheme.colorScheme.secondary,
                 )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(top = 14.dp, bottom = 8.dp),
-                ) {
-                    ChoiceChip("All", filter == "All") { filter = "All" }
-                    chips.forEach { name ->
-                        ChoiceChip(name, filter.equals(name, true)) { filter = name }
+                Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        ChoiceChip("All", filter == "All") { filter = "All" }
+                        chips.forEach { name ->
+                            ChoiceChip(name, filter.equals(name, true)) { filter = name }
+                        }
                     }
-                    ChoiceChip(if (byType) "Muscles" else "Types", false) {
-                        byType = !byType
-                        filter = "All"
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        ChoiceChip(if (byType) "Muscles" else "Types", false) {
+                            byType = !byType
+                            filter = "All"
+                        }
                     }
                 }
             }
