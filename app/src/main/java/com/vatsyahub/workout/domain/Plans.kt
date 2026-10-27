@@ -61,6 +61,7 @@ data class StrengthHold(
     val started: Boolean = true,
     val focus: Int = 0,
     val lines: List<PlanLine> = emptyList(),
+    val shown: List<List<Long>> = emptyList(),
 )
 
 data class BuilderDraft(

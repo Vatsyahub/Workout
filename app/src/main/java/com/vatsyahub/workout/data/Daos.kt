@@ -28,6 +28,9 @@ interface WorkoutDao {
     @Query("UPDATE exercises SET name = :name, bodyPart = :bodyPart, usage = :usage WHERE id = :id")
     suspend fun updateExercise(id: Long, name: String, bodyPart: String, usage: String)
 
+    @Query("UPDATE exercises SET bodyPart = :bodyPart WHERE id = :id")
+    suspend fun updateBodyPart(id: Long, bodyPart: String)
+
     @Query("DELETE FROM exercises WHERE id = :id")
     suspend fun deleteExercise(id: Long)
 

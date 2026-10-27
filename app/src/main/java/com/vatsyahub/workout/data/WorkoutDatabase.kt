@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.vatsyahub.workout.domain.musclesWithoutMovingHandleArms
 
 @Database(
     entities = [
@@ -26,7 +27,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ActiveSession::class,
         SavedPlan::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class WorkoutDatabase : RoomDatabase() {
@@ -71,9 +72,50 @@ abstract class WorkoutDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val cursor = db.query(
+                    """
+                    SELECT e.id AS id, e.name AS name, e.bodyPart AS bodyPart, e.usage AS usage,
+                        IFNULL((
+                            SELECT group_concat(t.name, ', ')
+                            FROM exercise_types l
+                            JOIN workout_types t ON t.id = l.typeId
+                            WHERE l.exerciseId = e.id
+                        ), '') AS types
+                    FROM exercises e
+                    """.trimIndent(),
+                )
+                val updates = ArrayList<Pair<Long, String>>()
+                cursor.use { rows ->
+                    val idCol = rows.getColumnIndexOrThrow("id")
+                    val nameCol = rows.getColumnIndexOrThrow("name")
+                    val partCol = rows.getColumnIndexOrThrow("bodyPart")
+                    val useCol = rows.getColumnIndexOrThrow("usage")
+                    val typeCol = rows.getColumnIndexOrThrow("types")
+                    while (rows.moveToNext()) {
+                        val body = rows.getString(partCol).orEmpty()
+                        val next = musclesWithoutMovingHandleArms(
+                            body,
+                            rows.getString(nameCol).orEmpty(),
+                            rows.getString(typeCol).orEmpty(),
+                            rows.getString(useCol).orEmpty(),
+                        )
+                        if (next != body) updates += rows.getLong(idCol) to next
+                    }
+                }
+                for ((id, body) in updates) {
+                    db.execSQL(
+                        "UPDATE exercises SET bodyPart = ? WHERE id = ?",
+                        arrayOf<Any>(body, id),
+                    )
+                }
+            }
+        }
+
         fun create(context: Context): WorkoutDatabase =
             Room.databaseBuilder(context, WorkoutDatabase::class.java, "workout.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         db.execSQL(

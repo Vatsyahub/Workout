@@ -72,8 +72,9 @@ import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.repeatStrength
+import com.vatsyahub.workout.domain.repairAssignment
 import com.vatsyahub.workout.domain.rerollAll
-import com.vatsyahub.workout.domain.rerollOne
+import com.vatsyahub.workout.domain.rerollInSlot
 import com.vatsyahub.workout.domain.shapeForKindName
 import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.stepExercise
@@ -788,9 +789,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (row.groupKind == "PICK") return
         val ids = rerollIds(draft.kind, row)
         if (ids.isEmpty()) return
-        val next = rerollOne(ids.filter { id -> draft.lines.none { it.exerciseId == id && it.key != row.key } }, row.exerciseId, Random)
+        val pool = ids.filter { id -> draft.lines.none { it.exerciseId == id && it.key != row.key } }
+        val placed = rerollInSlot(draft.lines.map { it.exerciseId }, line, pool, row.shownIds, Random) ?: return
         val lines = draft.lines.toMutableList()
-        lines[line] = row.copy(exerciseId = next, setsEdited = false)
+        lines[line] = row.copy(exerciseId = placed.ids[line], setsEdited = false, shownIds = placed.shown)
         val cards = lines.mapNotNull { lineCard(it) }
         val refreshed = lines.map { line ->
             val card = cards.find { it.key == line.key } ?: return@map line
@@ -815,9 +817,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             } else {
                 takeExact(pool, rows.size, Random, used)
             }
-            for (card in picked) {
-                if (!used.add(card.id)) continue
-                redrawn += StrengthLine(card.id, emptyList(), sample.group, sample.groupKind)
+            val poolIds = pool.map { it.id }
+            val assigned = List(rows.size) { index -> picked.getOrNull(index)?.id ?: rows[index].exerciseId }
+            val rolls = repairAssignment(
+                assigned,
+                rows.map { row -> (row.shownIds + row.exerciseId).toList() },
+                poolIds,
+                Random,
+            )
+            rows.zip(rolls).forEach { (row, roll) ->
+                if (!used.add(roll.id)) return@forEach
+                redrawn += row.copy(
+                    exerciseId = roll.id,
+                    sets = emptyList(),
+                    setsEdited = false,
+                    shownIds = roll.shown.toSet(),
+                )
             }
         }
         val combined = redrawn + picks
@@ -1145,8 +1160,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = hiit ?: return
         val sets = draft.sets.toMutableList()
         val set = sets.getOrNull(setIndex) ?: return
-        val ids = set.exerciseIds.filterIndexed { index, _ -> index != line }
-        sets[setIndex] = set.copy(exerciseIds = ids).aligned(draft.workSec, set.breakSeconds)
+        val kept = set.exerciseIds.mapIndexedNotNull { index, id ->
+            if (index == line) null else id to set.shownIds.getOrElse(index) { emptySet() }
+        }
+        sets[setIndex] = set.copy(
+            exerciseIds = kept.map { it.first },
+            shownIds = kept.map { it.second },
+        ).aligned(draft.workSec, set.breakSeconds)
         hiit = draft.copy(sets = sets)
         back()
     }
@@ -1156,10 +1176,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val pool = snap.value.pool("HIIT").map { it.id }
         val sets = draft.sets.toMutableList()
         val set = sets.getOrNull(setIndex) ?: return
-        val ids = set.exerciseIds.toMutableList()
-        if (line !in ids.indices) return
-        ids[line] = rerollOne(pool, ids[line], Random)
-        sets[setIndex] = set.copy(exerciseIds = ids).aligned(draft.workSec, set.breakSeconds)
+        if (line !in set.exerciseIds.indices) return
+        val placed = rerollInSlot(
+            set.exerciseIds,
+            line,
+            pool,
+            set.shownIds.getOrElse(line) { emptySet() },
+            Random,
+        ) ?: return
+        val shown = List(placed.ids.size) { index ->
+            if (index == line) placed.shown else set.shownIds.getOrElse(index) { emptySet() }
+        }
+        sets[setIndex] = set.copy(exerciseIds = placed.ids, shownIds = shown).aligned(draft.workSec, set.breakSeconds)
         hiit = draft.copy(sets = sets)
     }
 
@@ -1169,13 +1197,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val ids = snap.value.pool("HIIT").map { it.id }
         hiit = draft.copy(
             sets = draft.sets.map { set ->
-                val drawn = drawSet(pool, set.exerciseIds.size, Random).toMutableList()
-                set.exerciseIds.forEachIndexed { index, current ->
-                    if (drawn.getOrNull(index) == current && index < drawn.size) {
-                        drawn[index] = rerollOne(ids, current, Random)
-                    }
+                val drawn = drawSet(pool, set.exerciseIds.size, Random)
+                val assigned = List(set.exerciseIds.size) { index ->
+                    drawn.getOrElse(index) { set.exerciseIds[index] }
                 }
-                set.copy(exerciseIds = drawn).aligned(draft.workSec, set.breakSeconds)
+                val histories = set.exerciseIds.mapIndexed { index, current ->
+                    (set.shownIds.getOrElse(index) { emptySet() } + current).toList()
+                }
+                val rolls = repairAssignment(assigned, histories, ids, Random)
+                set.copy(
+                    exerciseIds = rolls.map { it.id },
+                    shownIds = rolls.map { it.shown.toSet() },
+                ).aligned(draft.workSec, set.breakSeconds)
             },
         )
     }
@@ -1184,10 +1217,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = hiit ?: return
         val sets = draft.sets.toMutableList()
         val set = sets.getOrNull(setIndex) ?: return
+        if (line !in set.exerciseIds.indices) return
         val ids = set.exerciseIds.toMutableList()
-        if (line !in ids.indices) return
+        val previous = ids[line]
         ids[line] = exerciseId
-        sets[setIndex] = set.copy(exerciseIds = ids)
+        val shown = List(ids.size) { index ->
+            val prior = set.shownIds.getOrElse(index) { emptySet() }
+            if (index == line) prior + previous + exerciseId else prior
+        }
+        sets[setIndex] = set.copy(exerciseIds = ids, shownIds = shown)
         hiit = draft.copy(sets = sets)
     }
 
@@ -1462,7 +1500,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     row.group.isNotBlank() -> row.group
                     else -> chosenPart
                 }
-                lines[request.line] = row.copy(exerciseId = id, group = group)
+                lines[request.line] = row.copy(
+                    exerciseId = id,
+                    group = group,
+                    shownIds = row.shownIds + row.exerciseId + id,
+                )
                 strength = withKind(draft.copy(lines = lines))
             }
             is Picker.PickSwap -> {
@@ -1973,6 +2015,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     groupKind = line.groupKind,
                 )
             },
+            shown = draft.lines.map { it.shownIds.toList() },
         )
     }
 
@@ -2041,7 +2084,9 @@ private fun StrengthHold.toDraft(): StrengthDraft =
         kind = kind,
         day = runCatching { LocalDate.parse(day) }.getOrElse { LocalDate.now() },
         durationSec = durationSec,
-        lines = lines.map { it.toStrengthLine() },
+        lines = lines.mapIndexed { index, line ->
+            line.toStrengthLine().copy(shownIds = shown.getOrElse(index) { emptyList() }.toSet())
+        },
         started = true,
         focus = focus.coerceAtLeast(0),
     )

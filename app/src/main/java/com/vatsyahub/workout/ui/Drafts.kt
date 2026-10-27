@@ -19,6 +19,7 @@ data class StrengthLine(
     val groupKind: String = "PART",
     val key: Long = lineKey(),
     val setsEdited: Boolean = false,
+    val shownIds: Set<Long> = emptySet(),
 )
 
 data class StrengthDraft(
@@ -41,6 +42,7 @@ data class HiitSetDraft(
     val exerciseIds: List<Long>,
     val splitSeconds: List<Int>,
     val breakSeconds: Int,
+    val shownIds: List<Set<Long>> = emptyList(),
 )
 
 data class HiitDraft(

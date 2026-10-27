@@ -3,6 +3,7 @@ package com.vatsyahub.workout.data
 import androidx.room.withTransaction
 import com.vatsyahub.workout.domain.Pass
 import com.vatsyahub.workout.domain.fingerprint
+import com.vatsyahub.workout.domain.musclesWithoutMovingHandleArms
 import com.vatsyahub.workout.domain.patternLabel
 import java.time.LocalDate
 import java.time.LocalTime
@@ -101,12 +102,32 @@ class Repository(private val db: WorkoutDatabase) {
             if (dao.exerciseCount() > 0) return@withTransaction
             for (row in StarterLibrary.rows) {
                 val id = dao.insertExercise(
-                    Exercise(name = row.name, bodyPart = row.muscles, usage = row.usage),
+                    Exercise(
+                        name = row.name,
+                        bodyPart = musclesWithoutMovingHandleArms(row.muscles, row.name, row.types, row.usage),
+                        usage = row.usage,
+                    ),
                 )
                 for (typeName in row.types.split(',').map { it.trim() }.filter { it.isNotEmpty() }) {
                     linkType(id, typeName)
                 }
             }
+        }
+    }
+
+    suspend fun dropArmsFromMovingHandles() {
+        val rows = dao.exercises()
+        if (rows.isEmpty()) return
+        val typeName = dao.types().associate { it.id to it.name }
+        val typesByExercise = dao.links().groupBy({ it.exerciseId }, { typeName[it.typeId] })
+        val changes = rows.mapNotNull { row ->
+            val types = typesByExercise[row.id].orEmpty().filterNotNull().joinToString(", ")
+            val next = musclesWithoutMovingHandleArms(row.bodyPart, row.name, types, row.usage)
+            if (next == row.bodyPart) null else row.id to next
+        }
+        if (changes.isEmpty()) return
+        db.withTransaction {
+            for ((id, body) in changes) dao.updateBodyPart(id, body)
         }
     }
 

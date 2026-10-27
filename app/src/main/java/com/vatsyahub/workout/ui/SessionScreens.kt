@@ -10,8 +10,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -202,12 +204,15 @@ private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
         val line = draft.lines[page]
         val exercise = snap.exercises.find { it.id == line.exerciseId }
         val showWeight = showsWeight(draft.kind, exercise?.usage)
+        val last = page == draft.lines.lastIndex
+        BoxWithConstraints(Modifier.fillMaxSize()) {
         Column(
             Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
+                .heightIn(min = maxHeight)
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -250,6 +255,10 @@ private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
                     line.sets,
                 ) { model.replaceDraftSets(page, it) }
             }
+            if (last) {
+                PrimaryButton("Mark workout complete") { model.open(Screen.StrengthTime) }
+            }
+        }
         }
     }
 }

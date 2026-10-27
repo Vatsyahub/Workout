@@ -65,22 +65,7 @@ private fun AppFrame(model: AppModel) {
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (screen !in RootTabs) {
-                val draft = model.strength
-                val finish = screen == Screen.Strength &&
-                    draft != null &&
-                    draft.started &&
-                    !draft.logging &&
-                    draft.lines.isNotEmpty()
-                Bar(
-                    titleOf(screen, model),
-                    onBack = { model.back() },
-                    action = if (finish) "Done" else null,
-                    onAction = if (finish) {
-                        { model.open(Screen.StrengthTime) }
-                    } else {
-                        null
-                    },
-                )
+                Bar(titleOf(screen, model), onBack = { model.back() })
             }
         },
         bottomBar = {
