@@ -63,8 +63,6 @@ import com.vatsyahub.workout.domain.weekStart
 import java.time.LocalDate
 import kotlinx.coroutines.launch
 
-private val BuiltInOutings = listOf("Swim", "Run", "Hike")
-
 private fun usageLabel(usage: String): String = when (usage) {
     "HEAVY" -> "Heavy"
     "BODYWEIGHT" -> "Bodyweight"
@@ -90,7 +88,6 @@ fun HomeScreen(model: AppModel) {
         workout.finished && !localDay(workout.performedAt).let { it.isBefore(start) || it.isAfter(end) }
     }
     val recent = snap.workouts.filter { it.finished }.sortedByDescending { it.performedAt }.take(3)
-    val extraKinds = snap.kinds.filter { kind -> BuiltInOutings.none { it.equals(kind.name, true) } }
     Page {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
             ProfilePhoto(snap.profile.avatar, 52.dp) { model.tab(Screen.Settings) }
@@ -137,10 +134,6 @@ fun HomeScreen(model: AppModel) {
             }
             StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.startNamedOuting("Hike") }
         }
-        extraKinds.forEach { kind ->
-            Door(kindIcon(kind.shape), kind.name) { model.startOuting(kind.id) }
-        }
-        Door(Icons.Filled.Edit, "Other outing") { model.open(Screen.AddKind) }
         SectionLabel("Recent")
         if (recent.isEmpty()) {
             Text("Finished sessions show up here.", color = MaterialTheme.colorScheme.secondary)
@@ -186,8 +179,6 @@ fun AddKindScreen(model: AppModel) {
 
 @Composable
 fun LogTypeScreen(model: AppModel) {
-    val snap by model.snap.collectAsState()
-    val extra = snap.kinds.filter { kind -> BuiltInOutings.none { it.equals(kind.name, true) } }
     Page {
         Text(
             "For a session that is already finished.",
@@ -200,9 +191,6 @@ fun LogTypeScreen(model: AppModel) {
         Door(Icons.Filled.Pool, "Swim") { model.logNamedOuting("Swim") }
         Door(Icons.AutoMirrored.Filled.DirectionsRun, "Run") { model.logNamedOuting("Run") }
         Door(Icons.Filled.Terrain, "Hike") { model.logNamedOuting("Hike") }
-        extra.forEach { kind ->
-            Door(kindIcon(kind.shape), kind.name) { model.beginOutingLog(kind.id) }
-        }
     }
 }
 

@@ -35,9 +35,11 @@ import com.vatsyahub.workout.domain.PHASE_WORK
 import com.vatsyahub.workout.domain.bestsReport
 import com.vatsyahub.workout.domain.dayText
 import com.vatsyahub.workout.domain.exerciseReport
+import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatBreak
 import com.vatsyahub.workout.domain.formatDuration
 import com.vatsyahub.workout.domain.formatKm
+import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.parseDuration
 import com.vatsyahub.workout.domain.patternLabel
 import com.vatsyahub.workout.domain.weekStart
@@ -239,23 +241,24 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                     modifier = Modifier.padding(top = 6.dp),
                 )
                 Text(part, color = MaterialTheme.colorScheme.secondary)
+                val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
+                CompactSets(formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, heavy), heavy) {
+                    sets.forEachIndexed { index, set ->
+                        SetRow(
+                            label = "Set ${index + 1}",
+                            reps = set.reps,
+                            weight = set.weightKg,
+                            heavy = heavy,
+                            onRemove = { model.removeSavedSet(set.id) },
+                            onReps = { model.changeSet(set.id, it, set.weightKg) },
+                            onWeight = { model.changeSet(set.id, set.reps, it) },
+                        )
+                    }
+                }
                 if (removing) {
                     QuietButton("Remove exercise", MaterialTheme.colorScheme.error) { model.removeSavedBlock(block.id) }
                 } else {
                     QuietButton("Remove") { removing = true }
-                }
-                SetTableHeader(heavy)
-                val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
-                sets.forEachIndexed { index, set ->
-                    SetRow(
-                        label = "Set ${index + 1}",
-                        reps = set.reps,
-                        weight = set.weightKg,
-                        heavy = heavy,
-                        onRemove = { model.removeSavedSet(set.id) },
-                        onReps = { model.changeSet(set.id, it, set.weightKg) },
-                        onWeight = { model.changeSet(set.id, set.reps, it) },
-                    )
                 }
                 QuietButton("Add set") { model.addSavedSet(block.id) }
             }

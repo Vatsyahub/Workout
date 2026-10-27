@@ -51,8 +51,10 @@ import com.vatsyahub.workout.domain.dayText
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.formatBreak
 import com.vatsyahub.workout.domain.formatDuration
+import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatKg
 import com.vatsyahub.workout.domain.formatKm
+import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.formatMetres
 import com.vatsyahub.workout.domain.formatPace
 import com.vatsyahub.workout.domain.kmPaceSeconds
@@ -138,23 +140,47 @@ fun StrengthScreen(model: AppModel) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                SetTableHeader(heavy)
-                line.sets.forEachIndexed { setIndex, set ->
-                    SetRow(
-                        label = "Set ${setIndex + 1}",
-                        reps = set.reps,
-                        weight = set.weightKg,
-                        heavy = heavy,
-                        onRemove = { model.removeDraftSet(lineIndex, setIndex) },
-                        onReps = { model.setDraftReps(lineIndex, setIndex, it) },
-                        onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
-                    )
+                CompactSets(formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, heavy), heavy) {
+                    line.sets.forEachIndexed { setIndex, set ->
+                        SetRow(
+                            label = "Set ${setIndex + 1}",
+                            reps = set.reps,
+                            weight = set.weightKg,
+                            heavy = heavy,
+                            onRemove = { model.removeDraftSet(lineIndex, setIndex) },
+                            onReps = { model.setDraftReps(lineIndex, setIndex, it) },
+                            onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
+                        )
+                    }
                 }
                 QuietButton("Add set") { model.addDraftSet(lineIndex) }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         QuietButton("Reroll all") { model.rerollDraftAll() }
+    }
+}
+
+@Composable
+internal fun CompactSets(
+    summary: String,
+    heavy: Boolean,
+    editors: @Composable () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    if (summary.isNotBlank()) {
+        Text(
+            summary,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open }
+                .padding(top = 8.dp, bottom = 2.dp),
+        )
+    }
+    if (open && summary.isNotBlank()) {
+        SetTableHeader(heavy)
+        editors()
     }
 }
 

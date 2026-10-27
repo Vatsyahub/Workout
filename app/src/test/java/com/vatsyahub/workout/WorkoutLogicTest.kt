@@ -11,8 +11,10 @@ import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.coveredMetres
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
+import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.formatPace
+import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.kmPaceSeconds
 import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
@@ -185,6 +187,29 @@ class WorkoutLogicTest {
         val hike = lines.single { it.startsWith("Hike") }
         assertTrue(hike.contains("400 m"))
         assertEquals(4L, bestsReport(today, marks).single { it.text.startsWith("Hike") }.workoutId)
+    }
+
+    @Test
+    fun setsCollapseIntoOneLine() {
+        assertEquals(
+            "3 × 8 @ 20 kg",
+            formatSets(List(3) { SetLoad(8, 20.0) }, showWeight = true),
+        )
+        assertEquals(
+            "1 × 4, 2 × 8",
+            formatSets(listOf(SetLoad(4), SetLoad(8), SetLoad(8)), showWeight = false),
+        )
+        assertEquals(
+            "1 × 8 @ 20 kg, 2 × 8 @ 22.5 kg",
+            formatSets(listOf(SetLoad(8, 20.0), SetLoad(8, 22.5), SetLoad(8, 22.5)), showWeight = true),
+        )
+        assertEquals(
+            "1 × 8 @ 20 kg, 1 × 10 @ 20 kg, 1 × 8 @ 20 kg",
+            formatSets(listOf(SetLoad(8, 20.0), SetLoad(10, 20.0), SetLoad(8, 20.0)), showWeight = true),
+        )
+        assertEquals("2 × 8", formatSets(listOf(SetLoad(8, null), SetLoad(8, null)), showWeight = true))
+        assertEquals("1 × 8", formatSets(listOf(SetLoad(8, 20.0)), showWeight = false))
+        assertEquals("", formatSets(emptyList(), showWeight = true))
     }
 
     private fun heavy(id: Long, day: LocalDate, name: String, weight: Double, reps: Int) = Mark(
