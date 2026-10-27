@@ -151,6 +151,7 @@ fun HomeScreen(model: AppModel) {
                     historyKind(workout, snap),
                     historyDetail(workout, snap),
                     onUnfavourite = { model.setFavourite(workout.id, false) },
+                    icon = historyIcon(workout, snap),
                 ) { model.repeat(workout.id) }
             }
         }
@@ -160,7 +161,12 @@ fun HomeScreen(model: AppModel) {
         } else {
             recent.forEach { workout ->
                 val summary = snap.summary(workout)
-                WorkoutCard(cardTitle(summary), cardDetail(summary), favourite = workout.favourite) {
+                WorkoutCard(
+                    cardTitle(summary),
+                    cardDetail(summary),
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
                     model.open(Screen.LogDetail(workout.id))
                 }
             }
@@ -292,7 +298,7 @@ fun BuildScreen(model: AppModel) {
                 val detail = listOf(exercise.bodyPart, usageLabel(exercise.usage))
                     .filter { it.isNotBlank() }
                     .joinToString(" · ")
-                WorkoutCard(exercise.name, detail) {
+                WorkoutCard(exercise.name, detail, icon = Icons.Filled.FitnessCenter) {
                     model.addPicked(candidate.id)
                     query = ""
                 }
@@ -342,7 +348,8 @@ fun BuildScreen(model: AppModel) {
             build.parts.forEachIndexed { index, part ->
                 Panel {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
+                        IconBadge(if (byType) Icons.Filled.Timer else Icons.Filled.AccessibilityNew)
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text(
                                 if (byType) "Workout type" else "Body part",
                                 color = MaterialTheme.colorScheme.secondary,
@@ -401,7 +408,8 @@ private fun PickedExerciseCard(
     Panel {
         Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).clickable(onClick = onName)) {
+            IconBadge(Icons.Filled.FitnessCenter)
+            Column(Modifier.weight(1f).padding(start = 12.dp).clickable(onClick = onName)) {
                 Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Body part",
@@ -418,18 +426,27 @@ private fun PickedExerciseCard(
                 Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
             }
         }
-        CompactSets(formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight), showWeight) {
-            line.sets.forEachIndexed { setIndex, set ->
-                SetRow(
-                    label = "Set ${setIndex + 1}",
-                    reps = set.reps,
-                    weight = set.weightKg,
-                    heavy = showWeight,
-                    onRemove = { onRemoveSet(setIndex) },
-                    onReps = { onReps(setIndex, it) },
-                    onWeight = { onWeight(setIndex, it) },
-                )
-            }
+        val summary = formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight)
+        Text(
+            "Sets and reps",
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        if (summary.isNotBlank()) {
+            Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
+        }
+        SetTableHeader(showWeight)
+        line.sets.forEachIndexed { setIndex, set ->
+            SetRow(
+                label = "Set ${setIndex + 1}",
+                reps = set.reps,
+                weight = set.weightKg,
+                heavy = showWeight,
+                onRemove = { onRemoveSet(setIndex) },
+                onReps = { onReps(setIndex, it) },
+                onWeight = { onWeight(setIndex, it) },
+            )
         }
         QuietButton("Add set", onClick = onAddSet)
     }
@@ -487,7 +504,11 @@ fun ExercisesScreen(model: AppModel) {
             }
             items(filtered, key = { it.id }) { exercise ->
                 val usage = usageLabel(exercise.usage)
-                WorkoutCard(exercise.name, listOf(exercise.bodyPart, usage).filter { it.isNotBlank() }.joinToString(" · ")) {
+                WorkoutCard(
+                    exercise.name,
+                    listOf(exercise.bodyPart, usage).filter { it.isNotBlank() }.joinToString(" · "),
+                    icon = Icons.Filled.FitnessCenter,
+                ) {
                     model.open(Screen.Exercise(exercise.id))
                 }
             }
@@ -667,7 +688,7 @@ fun ProfileScreen(model: AppModel) {
         model.back()
     }) {
         if (bitmap == null) {
-            Word("Photo") { pick.launch("image/*") }
+            Door(Icons.Filled.Person, "Photo") { pick.launch("image/*") }
         } else {
             Image(
                 bitmap,
@@ -721,8 +742,13 @@ fun CarryScreen(model: AppModel) {
     }
     Page {
         val waiting = pending
+        Text(
+            "One file of your profile, exercises, and logs.",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+        )
         if (waiting != null) {
-            Word("Replace") {
+            Door(Icons.Filled.Folder, "Replace everything with this file") {
                 scope.launch {
                     val ok = model.importText(waiting)
                     pending = null
@@ -730,9 +756,11 @@ fun CarryScreen(model: AppModel) {
                 }
             }
         } else {
-            Word("Export") { export.launch("workout.json") }
-            Word("Import") { open.launch(arrayOf("application/json", "text/*", "*/*")) }
-            model.carryNote?.let { Text(it, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(vertical = 12.dp)) }
+            Door(Icons.Filled.Folder, "Export") { export.launch("workout.json") }
+            Door(Icons.Filled.Folder, "Import") { open.launch(arrayOf("application/json", "text/*", "*/*")) }
+            model.carryNote?.let {
+                Panel { Text(it, style = MaterialTheme.typography.titleMedium) }
+            }
         }
     }
 }
@@ -745,13 +773,13 @@ fun ReportsScreen(model: AppModel) {
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
         )
-        WorkoutCard("This week", "Workouts this week, and what changed since last week.") {
+        WorkoutCard("This week", "Workouts this week, and what changed since last week.", icon = Icons.Filled.History) {
             model.open(Screen.Weekly)
         }
-        WorkoutCard("One exercise", "Every recent session for a single exercise.") {
+        WorkoutCard("One exercise", "Every recent session for a single exercise.", icon = Icons.Filled.FitnessCenter) {
             model.open(Screen.ReportExercises)
         }
-        WorkoutCard("Bests", "Best weight, reps, time, distance, and pace.") {
+        WorkoutCard("Bests", "Best weight, reps, time, distance, and pace.", icon = Icons.Filled.Timer) {
             model.open(Screen.Bests)
         }
     }

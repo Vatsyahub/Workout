@@ -11,7 +11,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Pool
+import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -51,6 +61,18 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+internal fun historyIcon(workout: Workout, snap: Snapshot): ImageVector = when (workout.kind) {
+    "HIIT" -> Icons.Filled.Timer
+    "BODYWEIGHT" -> Icons.Filled.AccessibilityNew
+    "OUTING" -> when (snap.kinds.find { it.id == workout.activityKindId }?.shape) {
+        "SWIM" -> Icons.Filled.Pool
+        "RUN" -> Icons.AutoMirrored.Filled.DirectionsRun
+        "HIKE" -> Icons.Filled.Terrain
+        else -> Icons.AutoMirrored.Filled.DirectionsWalk
+    }
+    else -> Icons.Filled.FitnessCenter
+}
 
 internal fun historyKind(workout: Workout, snap: Snapshot): String = when (workout.kind) {
     "HIIT" -> "HIIT"
@@ -140,7 +162,12 @@ fun LogsScreen(model: AppModel) {
                 }
             }
             items(week, key = { it.id }) { workout ->
-                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap), favourite = workout.favourite) {
+                WorkoutCard(
+                    historyKind(workout, snap),
+                    historyDetail(workout, snap),
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
                     model.open(Screen.LogDetail(workout.id))
                 }
             }
@@ -151,6 +178,7 @@ fun LogsScreen(model: AppModel) {
                 WorkoutCard(
                     month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)),
                     "Earlier sessions",
+                    icon = Icons.Filled.History,
                 ) {
                     model.open(Screen.Month(month.year, month.monthValue))
                 }
@@ -177,7 +205,12 @@ fun MonthScreen(model: AppModel, year: Int, month: Int) {
                 }
             }
             items(logs, key = { it.id }) { workout ->
-                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap), favourite = workout.favourite) {
+                WorkoutCard(
+                    historyKind(workout, snap),
+                    historyDetail(workout, snap),
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
                     model.open(Screen.LogDetail(workout.id))
                 }
             }
@@ -241,8 +274,13 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
             val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part"
             var removing by remember(block.id) { mutableStateOf(false) }
             Panel {
-                Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                Text(snap.blockName(block), style = MaterialTheme.typography.titleLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.FitnessCenter)
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                        Text(snap.blockName(block), style = MaterialTheme.typography.titleLarge)
+                    }
+                }
                 Text(
                     "Body part",
                     color = MaterialTheme.colorScheme.secondary,
@@ -511,6 +549,7 @@ fun ReportExercisesScreen(model: AppModel) {
                 WorkoutCard(
                     exercise.name,
                     exercise.bodyPart.ifBlank { "No body part" },
+                    icon = Icons.Filled.FitnessCenter,
                 ) { model.open(Screen.ExerciseReport(exerciseKey(exercise.id), exercise.name)) }
             }
         }

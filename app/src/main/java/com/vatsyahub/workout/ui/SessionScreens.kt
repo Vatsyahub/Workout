@@ -18,7 +18,12 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Pool
+import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -96,9 +101,11 @@ fun StrengthScreen(model: AppModel) {
             Panel {
                 Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.FitnessCenter)
                     Column(
                         Modifier
                             .weight(1f)
+                            .padding(start = 12.dp)
                             .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
                     ) {
                         Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
@@ -302,18 +309,11 @@ fun HiitScreen(model: AppModel) {
                 }
                 set.exerciseIds.forEachIndexed { line, id ->
                     val exercise = snap.exercises.find { it.id == id }
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable { model.openPicker(Picker.HiitSwap(setIndex, line)) }
-                            .padding(vertical = 6.dp),
-                    ) {
-                        Text(exercise?.name ?: "Exercise", style = MaterialTheme.typography.titleMedium)
-                        val part = exercise?.bodyPart.orEmpty()
-                        if (part.isNotBlank()) {
-                            Text(part, color = MaterialTheme.colorScheme.secondary)
-                        }
-                    }
+                    WorkoutCard(
+                        exercise?.name ?: "Exercise",
+                        exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part",
+                        icon = Icons.Filled.Timer,
+                    ) { model.openPicker(Picker.HiitSwap(setIndex, line)) }
                 }
                 if (draft.manual) {
                     val slots = expand(set.exerciseIds.size, set.passes)
@@ -344,9 +344,9 @@ fun PatternPickScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     Page {
         snap.patterns.sortedBy { it.label }.forEach { pattern ->
-            Word(pattern.label) { model.applyPattern(pattern.id) }
+            WorkoutCard(pattern.label, "Use this pattern", icon = Icons.Filled.Timer) { model.applyPattern(pattern.id) }
         }
-        Word("Edit") { model.open(Screen.PatternEdit) }
+        Door(Icons.Filled.Timer, "Edit patterns") { model.open(Screen.PatternEdit) }
     }
 }
 
@@ -380,9 +380,9 @@ fun PatternEditScreen(model: AppModel) {
 fun SetMenuScreen(model: AppModel, index: Int) {
     val set = model.hiit?.sets?.getOrNull(index) ?: return
     Page {
-        Word(patternLabel(set.passes)) { model.openPatterns(index) }
+        Door(Icons.Filled.Timer, patternLabel(set.passes)) { model.openPatterns(index) }
         if ((model.hiit?.sets?.size ?: 0) > 1) {
-            Word("Remove") { model.removeHiitSet(index) }
+            Door(Icons.Filled.Delete, "Remove set") { model.removeHiitSet(index) }
         }
     }
 }
@@ -416,13 +416,15 @@ fun PickerScreen(model: AppModel) {
                     }
             }
             is Picker.HiitSwap -> {
-                Word("Reroll") {
+                Door(Icons.Filled.Refresh, "Reroll") {
                     model.rerollHiit(request.set, request.line)
                     model.back()
                 }
-                Word("Remove") { model.removeHiitLine(request.set, request.line) }
+                Door(Icons.Filled.Delete, "Remove") { model.removeHiitLine(request.set, request.line) }
                 snap.pool("HIIT").forEach { exercise ->
-                    Word(exercise.name) { model.pickExercise(exercise.id) }
+                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "No body part" }, icon = Icons.Filled.Timer) {
+                        model.pickExercise(exercise.id)
+                    }
                 }
             }
             is Picker.AddStrength -> {
@@ -436,7 +438,11 @@ fun PickerScreen(model: AppModel) {
                     (kind == "MIXED" || draft?.lines?.any { it.groupKind == "PICK" } == true)
                 val exercises = if (handPicked || kind == "MIXED") snap.strengthLibrary() else snap.pool(kind)
                 exercises.forEach { exercise ->
-                    Word("${exercise.name} · ${exercise.bodyPart}") { model.pickExercise(exercise.id) }
+                    WorkoutCard(
+                        exercise.name,
+                        exercise.bodyPart.ifBlank { "No body part" },
+                        icon = Icons.Filled.FitnessCenter,
+                    ) { model.pickExercise(exercise.id) }
                 }
             }
             is Picker.PickSwap -> {
@@ -456,7 +462,9 @@ fun PickerScreen(model: AppModel) {
             }
             is Picker.AddHiit -> {
                 snap.pool("HIIT").forEach { exercise ->
-                    Word(exercise.name) { model.pickExercise(exercise.id) }
+                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "No body part" }, icon = Icons.Filled.Timer) {
+                        model.pickExercise(exercise.id)
+                    }
                 }
             }
             is Picker.BodyPart -> {
@@ -507,8 +515,24 @@ fun ClockScreen(model: AppModel) {
 
 @Composable
 fun OutingReadyScreen(model: AppModel, name: String) {
+    val icon = when (name) {
+        "Swim" -> Icons.Filled.Pool
+        "Run" -> Icons.AutoMirrored.Filled.DirectionsRun
+        "Hike" -> Icons.Filled.Terrain
+        else -> Icons.Filled.Timer
+    }
+    val detail = when (name) {
+        "Swim" -> "Start the clock when you are in the water."
+        "Run" -> "Start the clock when you are ready to run."
+        "Hike" -> "Start the clock when you are on the trail."
+        else -> "Start the clock when you are ready."
+    }
     ActionPage("Start", { model.startNamedOuting(name) }) {
-        Text(name, style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 8.dp))
+        Panel {
+            IconBadge(icon)
+            Text(name, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp))
+            Text(detail, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 4.dp))
+        }
     }
 }
 
@@ -609,8 +633,24 @@ fun OutingFormScreen(model: AppModel) {
         )
         model.saveOutingDraft()
     }) {
-        Word(dayText(model.outing?.day ?: draft.day)) { chooseDate() }
-        Line(kind.name)
+        Panel {
+            IconBadge(
+                when (kind.shape) {
+                    "SWIM" -> Icons.Filled.Pool
+                    "RUN" -> Icons.AutoMirrored.Filled.DirectionsRun
+                    "HIKE" -> Icons.Filled.Terrain
+                    else -> Icons.Filled.Timer
+                },
+            )
+            Text(kind.name, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                dayText(model.outing?.day ?: draft.day),
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable { chooseDate() },
+            )
+        }
         Field("Distance", distance, number = true) { distance = it }
         Field("Time", time, number = true) { time = it }
         val metres = distance.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) }

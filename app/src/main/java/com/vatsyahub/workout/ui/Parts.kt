@@ -164,11 +164,25 @@ fun StartCard(
 }
 
 @Composable
+fun IconBadge(icon: ImageVector, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
 fun WorkoutCard(
     title: String,
     detail: String,
     favourite: Boolean = false,
     onUnfavourite: (() -> Unit)? = null,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -179,11 +193,14 @@ fun WorkoutCard(
             .background(MaterialTheme.colorScheme.surface),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            IconBadge(icon, Modifier.padding(start = 14.dp))
+        }
         Column(
             Modifier
                 .weight(1f)
                 .clickable(onClick = onClick)
-                .padding(16.dp),
+                .padding(start = if (icon == null) 16.dp else 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
