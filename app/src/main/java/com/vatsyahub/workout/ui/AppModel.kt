@@ -36,7 +36,9 @@ import com.vatsyahub.workout.domain.drawBodyPart
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.fingerprint
+import com.vatsyahub.workout.domain.matchesBodyPart
 import com.vatsyahub.workout.domain.moveItem
+import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.SetLoad
@@ -288,7 +290,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val names = if (mode == "TYPE") {
             pool.flatMap { exercise -> snap.value.typesOf(exercise.id).map { it.name } }
         } else {
-            pool.map { it.bodyPart }
+            pool.flatMap { musclesOf(it.bodyPart) }
         }.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
         return BuildState(kind, names.map { PartAsk(it, 0) }, mode)
     }
@@ -326,7 +328,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     snap.value.typesOf(exercise.id).any { it.name.equals(ask.bodyPart, true) }
                 }.map { it.id }
             } else {
-                pool.filter { it.bodyPart.equals(ask.bodyPart, ignoreCase = true) }.map { it.id }
+                pool.filter { matchesBodyPart(it.bodyPart, ask.bodyPart) }.map { it.id }
             }
             drawBodyPart(ids, ask.count, Random).forEach { id ->
                 lines += StrengthLine(id, openingDraftSets(), ask.bodyPart, build.mode)
@@ -555,10 +557,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val row = draft.lines.getOrNull(line) ?: return snap.value.pool(draft.kind)
         if (row.groupKind == "PICK") return snap.value.strengthLibrary()
         val pool = snap.value.pool(draft.kind)
-        return if (row.groupKind == "TYPE" && row.group.isNotBlank()) {
-            pool.filter { exercise -> snap.value.typesOf(exercise.id).any { it.name.equals(row.group, true) } }
-        } else {
-            pool
+        return when {
+            row.groupKind == "TYPE" && row.group.isNotBlank() ->
+                pool.filter { exercise -> snap.value.typesOf(exercise.id).any { it.name.equals(row.group, true) } }
+            row.group.isNotBlank() ->
+                pool.filter { matchesBodyPart(it.bodyPart, row.group) }
+            else -> pool
         }
     }
 
@@ -571,7 +575,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         val part = row.group.ifBlank { snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart.orEmpty() }
         if (part.isBlank()) return pool.map { it.id }
-        return pool.filter { it.bodyPart.equals(part, true) }.map { it.id }
+        return pool.filter { matchesBodyPart(it.bodyPart, part) }.map { it.id }
     }
 
     fun rerollDraftLine(line: Int) {
@@ -1108,7 +1112,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 val lines = draft.lines.toMutableList()
                 val row = lines.getOrNull(request.line) ?: return
                 val chosenPart = snap.value.exercises.find { it.id == id }?.bodyPart.orEmpty()
-                val group = if (row.groupKind == "TYPE") row.group else chosenPart.ifBlank { row.group }
+                val group = when {
+                    row.groupKind == "TYPE" -> row.group
+                    row.group.isNotBlank() -> row.group
+                    else -> chosenPart
+                }
                 lines[request.line] = row.copy(exerciseId = id, group = group)
                 strength = withKind(draft.copy(lines = lines))
             }

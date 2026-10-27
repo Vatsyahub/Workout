@@ -16,6 +16,9 @@ interface WorkoutDao {
     @Query("SELECT * FROM exercises ORDER BY name COLLATE NOCASE")
     suspend fun exercises(): List<Exercise>
 
+    @Query("SELECT COUNT(*) FROM exercises")
+    suspend fun exerciseCount(): Int
+
     @Insert
     suspend fun insertExercise(exercise: Exercise): Long
 

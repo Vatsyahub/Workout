@@ -278,7 +278,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
         blocks.forEach { block ->
             val exercise = snap.exercises.find { it.id == block.exerciseId }
             val showWeight = showsWeight(workout.kind, exercise?.usage)
-            val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part"
+            val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None"
             var removing by remember(block.id) { mutableStateOf(false) }
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -381,7 +381,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
                 }
                 inSet.forEach { block ->
                     val exercise = snap.exercises.find { it.id == block.exerciseId }
-                    val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part"
+                    val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None"
                     var removing by remember(block.id) { mutableStateOf(false) }
                     InsetCard(snap.blockName(block), part, Icons.Filled.Timer)
                     if (removing) {
@@ -552,7 +552,7 @@ fun ReportExercisesScreen(model: AppModel) {
             items(snap.exercises, key = { it.id }) { exercise ->
                 WorkoutCard(
                     exercise.name,
-                    exercise.bodyPart.ifBlank { "No body part" },
+                    exercise.bodyPart.ifBlank { "None" },
                     icon = Icons.Filled.FitnessCenter,
                 ) { model.open(Screen.ExerciseReport(exerciseKey(exercise.id), exercise.name)) }
             }

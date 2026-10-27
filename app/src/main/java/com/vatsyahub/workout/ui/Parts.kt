@@ -639,11 +639,13 @@ fun Field(
     onValue: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.secondary,
-        )
+        if (label.isNotBlank()) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
         BasicTextField(
             value = value,
             onValueChange = onValue,

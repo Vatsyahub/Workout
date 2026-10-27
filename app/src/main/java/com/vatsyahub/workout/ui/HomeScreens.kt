@@ -71,7 +71,9 @@ import com.vatsyahub.workout.domain.PickCandidate
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.classifyPickedKind
 import com.vatsyahub.workout.domain.formatSets
+import com.vatsyahub.workout.domain.matchesBodyPart
 import com.vatsyahub.workout.domain.matchExercises
+import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.parseDecimal
 import com.vatsyahub.workout.domain.showsWeight
 import com.vatsyahub.workout.domain.weekStart
@@ -297,15 +299,17 @@ fun BuildScreen(model: AppModel) {
     ) {
         if (!picking && pool.isNotEmpty()) {
             Panel {
-                Text(if (byType) "Workout type" else "Body part", style = MaterialTheme.typography.titleLarge)
+                if (byType) {
+                    Text("Workout type", style = MaterialTheme.typography.titleLarge)
+                }
                 Text(
                     if (byType) {
                         "Tap Build to draw exercises of each workout type you set above zero."
                     } else {
-                        "Tap Build to draw exercises from each body part you set above zero."
+                        "Tap Build to draw exercises for each muscle you set above zero."
                     },
                     color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = if (byType) 4.dp else 0.dp),
                 )
             }
         }
@@ -378,7 +382,7 @@ fun BuildScreen(model: AppModel) {
                         if (byType) {
                             "No workout types yet. Add a type on an exercise, then come back."
                         } else {
-                            "These exercises have no body part yet."
+                            "These exercises have no muscles yet."
                         },
                     )
                 }
@@ -501,7 +505,7 @@ fun ExercisesScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     var filter by remember { mutableStateOf("All") }
     var byType by remember { mutableStateOf(false) }
-    val parts = snap.exercises.map { it.bodyPart }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+    val parts = snap.exercises.flatMap { musclesOf(it.bodyPart) }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
     val typeNames = snap.exercises.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
         .distinct()
         .sortedBy { it.lowercase() }
@@ -509,7 +513,7 @@ fun ExercisesScreen(model: AppModel) {
     val filtered = snap.exercises.filter { exercise ->
         if (filter == "All") return@filter true
         if (byType) snap.typesOf(exercise.id).any { it.name.equals(filter, true) }
-        else exercise.bodyPart.equals(filter, true)
+        else matchesBodyPart(exercise.bodyPart, filter)
     }
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
@@ -533,7 +537,7 @@ fun ExercisesScreen(model: AppModel) {
                     chips.forEach { name ->
                         ChoiceChip(name, filter.equals(name, true)) { filter = name }
                     }
-                    ChoiceChip(if (byType) "Body parts" else "Types", false) {
+                    ChoiceChip(if (byType) "Muscles" else "Types", false) {
                         byType = !byType
                         filter = "All"
                     }
@@ -620,12 +624,12 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                "Name, body part, and how you use it.",
+                "Name, muscles, and how you use it.",
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp),
             )
         Field("Name", name) { name = it }
-        Field("Body part", body) { body = it }
+        Field("", body) { body = it }
         Label("Used for")
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             listOf("HEAVY" to "Heavy", "BODYWEIGHT" to "Bodyweight", "BOTH" to "Both").forEach { (value, label) ->

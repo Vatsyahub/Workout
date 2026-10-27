@@ -93,6 +93,21 @@ class Repository(private val db: WorkoutDatabase) {
         )
     }
 
+    suspend fun seedIfEmpty() {
+        if (dao.exerciseCount() > 0) return
+        db.withTransaction {
+            if (dao.exerciseCount() > 0) return@withTransaction
+            for (row in StarterLibrary.rows) {
+                val id = dao.insertExercise(
+                    Exercise(name = row.name, bodyPart = row.muscles, usage = row.usage),
+                )
+                for (typeName in row.types.split(',').map { it.trim() }.filter { it.isNotEmpty() }) {
+                    linkType(id, typeName)
+                }
+            }
+        }
+    }
+
     suspend fun addExercise(name: String, bodyPart: String, usage: String, typeNames: List<String>): Long =
         db.withTransaction {
             val id = dao.insertExercise(Exercise(name = name.trim(), bodyPart = bodyPart.trim(), usage = usage))

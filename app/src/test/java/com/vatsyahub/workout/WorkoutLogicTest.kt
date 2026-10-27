@@ -25,7 +25,10 @@ import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.kmPaceSeconds
 import com.vatsyahub.workout.domain.PickCandidate
 import com.vatsyahub.workout.domain.classifyPickedKind
+import com.vatsyahub.workout.data.StarterLibrary
+import com.vatsyahub.workout.domain.matchesBodyPart
 import com.vatsyahub.workout.domain.matchExercises
+import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.repeatStrength
 import com.vatsyahub.workout.domain.strengthLabel
 import com.vatsyahub.workout.domain.withFavourite
@@ -43,6 +46,7 @@ import com.vatsyahub.workout.domain.inLastThreeMonths
 import java.time.LocalDate
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -418,6 +422,27 @@ class WorkoutLogicTest {
         assertEquals(3, orderNumber(0, 0, 2))
         assertEquals(1, orderNumber(1, 0, 2))
         assertEquals(2, orderNumber(2, 0, 2))
+    }
+
+    @Test
+    fun starterLibraryKeepsEveryListedExercise() {
+        val rows = StarterLibrary.rows
+        assertEquals(257, rows.size)
+        assertEquals(122, rows.count { it.usage == "HEAVY" })
+        assertEquals(101, rows.count { it.usage == "BODYWEIGHT" })
+        assertEquals(34, rows.count { it.usage == "BOTH" })
+        assertEquals(11, rows.groupingBy { it.name }.eachCount().count { it.value > 1 })
+        val push = rows.first { it.name == "Push-Ups" }
+        assertEquals("Chest, Triceps, Shoulders, Core", push.muscles)
+        assertEquals(listOf("Chest", "Triceps", "Shoulders", "Core"), musclesOf(push.muscles))
+        assertTrue(matchesBodyPart(push.muscles, "Chest"))
+        assertTrue(matchesBodyPart(push.muscles, "core"))
+        assertFalse(matchesBodyPart(push.muscles, "Hamstrings"))
+        assertFalse(matchesBodyPart(push.muscles, ""))
+        assertEquals("Plank Jack", rows.last().name)
+        assertTrue(rows.all { it.name.isNotBlank() && it.muscles.isNotBlank() && it.types.isNotBlank() })
+        assertTrue(rows.none { it.name.equals("Exercise Name", ignoreCase = true) })
+        assertTrue(rows.none { it.usage !in setOf("HEAVY", "BODYWEIGHT", "BOTH") })
     }
 
     @Test

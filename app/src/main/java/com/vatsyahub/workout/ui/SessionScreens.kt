@@ -75,6 +75,7 @@ import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.dayText
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.formatBreak
+import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.formatDuration
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatKm
@@ -434,7 +435,7 @@ fun HiitScreen(model: AppModel) {
                     val exercise = snap.exercises.find { it.id == id }
                     InsetCard(
                         exercise?.name ?: "Exercise",
-                        exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part",
+                        exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
                         Icons.Filled.Timer,
                     ) { model.openPicker(Picker.HiitSwap(setIndex, line)) }
                 }
@@ -541,6 +542,7 @@ fun PickerScreen(model: AppModel) {
                         when {
                             fromType -> "Exercises in ${line?.group}. Tap one to use it here."
                             fromPick -> "Any exercise you have added. Tap one to use it here."
+                            line?.group?.isNotBlank() == true -> "Exercises that use ${line.group}. Tap one to use it here."
                             else -> "Any exercise in this workout. Tap one to use it here."
                         },
                         color = MaterialTheme.colorScheme.secondary,
@@ -552,7 +554,7 @@ fun PickerScreen(model: AppModel) {
                     .forEach { exercise ->
                         WorkoutCard(
                             exercise.name,
-                            if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
+                            if (exercise.bodyPart.isBlank()) "None" else exercise.bodyPart,
                             icon = Icons.Filled.FitnessCenter,
                         ) { model.pickExercise(exercise.id) }
                     }
@@ -564,7 +566,7 @@ fun PickerScreen(model: AppModel) {
                 }
                 Door(Icons.Filled.Delete, "Remove", "Take this exercise out of the set") { model.removeHiitLine(request.set, request.line) }
                 snap.pool("HIIT").forEach { exercise ->
-                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "No body part" }, icon = Icons.Filled.Timer) {
+                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "None" }, icon = Icons.Filled.Timer) {
                         model.pickExercise(exercise.id)
                     }
                 }
@@ -582,7 +584,7 @@ fun PickerScreen(model: AppModel) {
                 exercises.forEach { exercise ->
                     WorkoutCard(
                         exercise.name,
-                        exercise.bodyPart.ifBlank { "No body part" },
+                        exercise.bodyPart.ifBlank { "None" },
                         icon = Icons.Filled.FitnessCenter,
                     ) { model.pickExercise(exercise.id) }
                 }
@@ -601,24 +603,28 @@ fun PickerScreen(model: AppModel) {
                     .forEach { exercise ->
                         WorkoutCard(
                             exercise.name,
-                            if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
+                            if (exercise.bodyPart.isBlank()) "None" else exercise.bodyPart,
                             icon = Icons.Filled.FitnessCenter,
                         ) { model.pickExercise(exercise.id) }
                     }
             }
             is Picker.AddHiit -> {
                 snap.pool("HIIT").forEach { exercise ->
-                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "No body part" }, icon = Icons.Filled.Timer) {
+                    WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "None" }, icon = Icons.Filled.Timer) {
                         model.pickExercise(exercise.id)
                     }
                 }
             }
             is Picker.BodyPart -> {
-                snap.pool(model.build.kind).map { it.bodyPart }.distinct().sortedBy { it.lowercase() }.forEach { part ->
-                    WorkoutCard(part, "Draw exercises from this body part", icon = Icons.Filled.AccessibilityNew) {
-                        model.pickPart(part)
+                snap.pool(model.build.kind)
+                    .flatMap { musclesOf(it.bodyPart) }
+                    .distinctBy { it.lowercase() }
+                    .sortedBy { it.lowercase() }
+                    .forEach { part ->
+                        WorkoutCard(part, "Draw exercises that use this muscle", icon = Icons.Filled.AccessibilityNew) {
+                            model.pickPart(part)
+                        }
                     }
-                }
             }
             null -> Unit
         }
