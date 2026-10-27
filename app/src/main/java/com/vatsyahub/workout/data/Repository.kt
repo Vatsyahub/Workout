@@ -293,12 +293,23 @@ class Repository(private val db: WorkoutDatabase) {
         }
     }
 
+    suspend fun replaceBlockSets(blockId: Long, sets: List<Pair<Int, Double?>>) {
+        db.withTransaction {
+            dao.deleteSetsForBlock(blockId)
+            sets.forEachIndexed { index, (reps, weight) ->
+                dao.insertSet(SetRow(blockId = blockId, position = index, reps = reps, weightKg = weight))
+            }
+        }
+    }
+
     suspend fun startHiit(
         day: LocalDate,
         work: Int,
         rest: Int,
         breakSec: Int,
         sets: List<Pair<List<Pass>, List<Long>>>,
+        warmupSec: Int = 120,
+        cooldownSec: Int = 300,
     ): Long = db.withTransaction {
         val workoutId = dao.insertWorkout(
             Workout(
@@ -307,6 +318,8 @@ class Repository(private val db: WorkoutDatabase) {
                 workSec = work,
                 restSec = rest,
                 breakSec = breakSec,
+                warmupSec = warmupSec,
+                cooldownSec = cooldownSec,
                 finished = false,
             ),
         )
@@ -334,8 +347,18 @@ class Repository(private val db: WorkoutDatabase) {
         rest: Int,
         breakSec: Int,
         sets: List<ManualHiitSet>,
+        warmupSec: Int = 120,
+        cooldownSec: Int = 300,
     ): Long = db.withTransaction {
-        val workoutId = startHiit(day, work, rest, breakSec, sets.map { it.passes to it.exerciseIds })
+        val workoutId = startHiit(
+            day,
+            work,
+            rest,
+            breakSec,
+            sets.map { it.passes to it.exerciseIds },
+            warmupSec,
+            cooldownSec,
+        )
         var position = 0
         sets.forEachIndexed { setIndex, set ->
             val sequence = com.vatsyahub.workout.domain.expand(set.exerciseIds.size, set.passes)

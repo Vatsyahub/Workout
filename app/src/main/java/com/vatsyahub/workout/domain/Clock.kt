@@ -3,6 +3,8 @@ package com.vatsyahub.workout.domain
 const val PHASE_WORK = "WORK"
 const val PHASE_REST = "REST"
 const val PHASE_BREAK = "BREAK"
+const val PHASE_WARMUP = "WARMUP"
+const val PHASE_COOLDOWN = "COOLDOWN"
 
 data class Cue(
     val phase: String,
@@ -18,8 +20,11 @@ fun timeline(
     workSec: Int,
     restSec: Int,
     breakSec: Int,
+    warmupSec: Int = 0,
+    cooldownSec: Int = 0,
 ): List<Cue> {
     val cues = ArrayList<Cue>()
+    if (warmupSec > 0) cues += Cue(PHASE_WARMUP, 0, null, null, warmupSec)
     val last = exerciseCounts.lastIndex
     exerciseCounts.forEachIndexed { setIndex, count ->
         val pattern = patterns.getOrElse(setIndex) { DefaultPasses }
@@ -29,11 +34,14 @@ fun timeline(
             if (slot !in seen.indices) continue
             seen[slot] += 1
             cues += Cue(PHASE_WORK, setIndex, slot, seen[slot], workSec)
-            cues += Cue(PHASE_REST, setIndex, slot, seen[slot], restSec)
+            if (restSec > 0) cues += Cue(PHASE_REST, setIndex, slot, seen[slot], restSec)
         }
-        if (setIndex != last && sequence.isNotEmpty()) {
+        if (setIndex != last && sequence.isNotEmpty() && breakSec > 0) {
             cues += Cue(PHASE_BREAK, setIndex, null, null, breakSec)
         }
+    }
+    if (cooldownSec > 0 && cues.any { it.phase == PHASE_WORK }) {
+        cues += Cue(PHASE_COOLDOWN, last.coerceAtLeast(0), null, null, cooldownSec)
     }
     return cues
 }

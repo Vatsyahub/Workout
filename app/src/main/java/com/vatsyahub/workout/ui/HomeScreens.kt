@@ -335,10 +335,7 @@ fun BuildScreen(model: AppModel) {
                     showWeight = showsWeight(pickedKind, exercise?.usage),
                     onName = { model.openPicker(Picker.PickSwap(index)) },
                     onRemove = { model.removePicked(index) },
-                    onAddSet = { model.addPickSet(index) },
-                    onRemoveSet = { set -> model.removePickSet(index, set) },
-                    onReps = { set, reps -> model.setPickReps(index, set, reps) },
-                    onWeight = { set, weight -> model.setPickWeight(index, set, weight) },
+                    onSave = { model.replacePickedSets(index, it) },
                 )
             }
         } else if (pool.isEmpty()) {
@@ -419,12 +416,10 @@ private fun PickedExerciseCard(
     showWeight: Boolean,
     onName: () -> Unit,
     onRemove: () -> Unit,
-    onAddSet: () -> Unit,
-    onRemoveSet: (Int) -> Unit,
-    onReps: (Int, Int) -> Unit,
-    onWeight: (Int, Double?) -> Unit,
+    onSave: (List<DraftSet>) -> Unit,
 ) {
     var editing by remember(line.exerciseId) { mutableStateOf(false) }
+    var draft by remember(line.exerciseId) { mutableStateOf(line.sets) }
     Panel {
         Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -450,21 +445,32 @@ private fun PickedExerciseCard(
         if (summary.isNotBlank()) {
             Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
         }
-        SoftButton("Sets and reps") { editing = !editing }
+        SoftButton("Sets and reps") {
+            if (!editing) draft = line.sets
+            editing = !editing
+        }
         if (editing) {
             SetTableHeader(showWeight)
-            line.sets.forEachIndexed { setIndex, set ->
+            draft.forEachIndexed { setIndex, set ->
                 SetRow(
                     label = "Set ${setIndex + 1}",
                     reps = set.reps,
                     weight = set.weightKg,
                     heavy = showWeight,
-                    onRemove = { onRemoveSet(setIndex) },
-                    onReps = { onReps(setIndex, it) },
-                    onWeight = { onWeight(setIndex, it) },
+                    onRemove = { draft = draft.filterIndexed { index, _ -> index != setIndex } },
+                    onReps = { reps ->
+                        draft = draft.toMutableList().also { it[setIndex] = it[setIndex].copy(reps = reps.coerceAtLeast(0)) }
+                    },
+                    onWeight = { weight ->
+                        draft = draft.toMutableList().also { it[setIndex] = it[setIndex].copy(weightKg = weight) }
+                    },
                 )
             }
-            QuietButton("Add set", onClick = onAddSet)
+            QuietButton("Add set") { draft = draft + DraftSet(8, null) }
+            SoftButton("Save") {
+                onSave(draft.ifEmpty { listOf(DraftSet(8, null)) })
+                editing = false
+            }
         }
     }
 }

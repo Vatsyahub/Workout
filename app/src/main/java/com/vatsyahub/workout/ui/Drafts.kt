@@ -41,6 +41,8 @@ data class HiitDraft(
     val template: List<Pass>,
     val sets: List<HiitSetDraft>,
     val manual: Boolean,
+    val warmupSec: Int = 120,
+    val cooldownSec: Int = 300,
 )
 
 data class OutingDraft(

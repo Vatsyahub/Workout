@@ -289,25 +289,16 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 )
                 Text(part, color = MaterialTheme.colorScheme.secondary)
                 val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
-                CompactSets(formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, showWeight), showWeight) {
-                    sets.forEachIndexed { index, set ->
-                        SetRow(
-                            label = "Set ${index + 1}",
-                            reps = set.reps,
-                            weight = set.weightKg,
-                            heavy = showWeight,
-                            onRemove = { model.removeSavedSet(set.id) },
-                            onReps = { model.changeSet(set.id, it, set.weightKg) },
-                            onWeight = { model.changeSet(set.id, set.reps, it) },
-                        )
-                    }
-                }
+                CompactSets(
+                    formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                    showWeight,
+                    sets.map { DraftSet(it.reps, it.weightKg) },
+                ) { model.replaceSavedSets(block.id, it) }
                 if (removing) {
                     QuietButton("Remove exercise", MaterialTheme.colorScheme.error) { model.removeSavedBlock(block.id) }
                 } else {
                     QuietButton("Remove") { removing = true }
                 }
-                QuietButton("Add set") { model.addSavedSet(block.id) }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
@@ -330,7 +321,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
                 FavouriteMark(workout.favourite) { model.setFavourite(workout.id, !workout.favourite) }
             }
             StatTile("Date", dayText(localDay(workout.performedAt)), Modifier.fillMaxWidth(), chooseDate)
-            StatTile("Pattern", pattern, Modifier.fillMaxWidth())
+            StatTile("Order", pattern, Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("Work", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)

@@ -25,6 +25,10 @@ import com.vatsyahub.workout.domain.classifyPickedKind
 import com.vatsyahub.workout.domain.DefaultPasses
 import com.vatsyahub.workout.domain.EACH
 import com.vatsyahub.workout.domain.PASS
+import com.vatsyahub.workout.domain.PHASE_BREAK
+import com.vatsyahub.workout.domain.PHASE_COOLDOWN
+import com.vatsyahub.workout.domain.PHASE_REST
+import com.vatsyahub.workout.domain.PHASE_WARMUP
 import com.vatsyahub.workout.domain.PHASE_WORK
 import com.vatsyahub.workout.domain.Pass
 import com.vatsyahub.workout.domain.catchUp
@@ -145,6 +149,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private var cueIndex = 0
     private var remainingMs = 0L
     private var runningClock = false
+    private var awaitingStart = false
     private var cueEndElapsed = 0L
     private var clockWorkoutId = 0L
     private var clockJob: kotlinx.coroutines.Job? = null
@@ -343,6 +348,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         build = build.copy(picks = picks)
     }
 
+    fun replacePickedSets(index: Int, sets: List<DraftSet>) {
+        val picks = build.picks.toMutableList()
+        val line = picks.getOrNull(index) ?: return
+        picks[index] = line.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) })
+        build = build.copy(picks = picks)
+    }
+
     fun removePickSet(line: Int, set: Int) {
         val picks = build.picks.toMutableList()
         val row = picks.getOrNull(line) ?: return
@@ -404,6 +416,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val lines = draft.lines.toMutableList()
         val row = lines.getOrNull(line) ?: return
         lines[line] = row.copy(sets = row.sets + DraftSet(8, null))
+        strength = draft.copy(lines = lines)
+    }
+
+    fun replaceDraftSets(line: Int, sets: List<DraftSet>) {
+        val draft = strength ?: return
+        val lines = draft.lines.toMutableList()
+        val row = lines.getOrNull(line) ?: return
+        lines[line] = row.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) })
         strength = draft.copy(lines = lines)
     }
 
@@ -529,7 +549,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
-        hiit = HiitDraft(LocalDate.now(), work, rest, breakSec, template, sets, manual)
+        val warmup = last?.warmupSec ?: 120
+        val cooldown = last?.cooldownSec ?: 300
+        hiit = HiitDraft(LocalDate.now(), work, rest, breakSec, template, sets, manual, warmup, cooldown)
         open(Screen.Hiit)
     }
 
@@ -581,6 +603,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     template,
                     sets,
                     false,
+                    workout.warmupSec ?: 120,
+                    workout.cooldownSec ?: 300,
                 )
                 open(Screen.Hiit)
             }
@@ -626,6 +650,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun setRest(seconds: Int) {
         hiit = hiit?.copy(restSec = seconds.coerceAtLeast(0))
+    }
+
+    fun setWarmup(seconds: Int) {
+        hiit = hiit?.copy(warmupSec = seconds.coerceAtLeast(0))
+    }
+
+    fun setCooldown(seconds: Int) {
+        hiit = hiit?.copy(cooldownSec = seconds.coerceAtLeast(0))
     }
 
     fun setBreak(seconds: Int) {
@@ -787,12 +819,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 draft.restSec,
                 draft.breakSec,
                 draft.sets.map { it.passes to it.exerciseIds },
+                draft.warmupSec,
+                draft.cooldownSec,
             )
             gate.withLock {
                 cues = cuesFromDraft(draft)
                 cueIndex = 0
                 clockWorkoutId = id
-                startCue(play = true)
+                awaitingStart = true
+                startCue(play = false)
+                runningClock = false
+                publishClock()
+                persistClock()
                 startClockLoop()
             }
             open(Screen.Clock)
@@ -810,6 +848,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 draft.sets.map {
                     ManualHiitSet(it.passes, it.exerciseIds, it.splitSeconds, it.breakSeconds)
                 },
+                draft.warmupSec,
+                draft.cooldownSec,
             )
             hiit = null
             showLog(id)
@@ -820,6 +860,16 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             gate.withLock {
                 if (clock == null) return@withLock
+                if (awaitingStart) {
+                    awaitingStart = false
+                    runningClock = true
+                    cueEndElapsed = SystemClock.elapsedRealtime() + remainingMs
+                    val cue = cues.getOrNull(cueIndex)
+                    if (cue != null) playCueStart(cue.phase)
+                    publishClock()
+                    persistClock()
+                    return@withLock
+                }
                 if (runningClock) {
                     remainingMs = (cueEndElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0)
                     runningClock = false
@@ -1072,6 +1122,10 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun replaceSavedSets(blockId: Long, sets: List<DraftSet>) = launch {
+        repo.replaceBlockSets(blockId, sets.map { it.reps to it.weightKg })
+    }
+
     fun changeSet(id: Long, reps: Int, weight: Double?) = launch { repo.updateSet(id, reps, weight) }
 
     fun addSavedSet(blockId: Long) = launch { repo.addSet(blockId) }
@@ -1135,6 +1189,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             draft.workSec,
             draft.restSec,
             draft.breakSec,
+            draft.warmupSec,
+            draft.cooldownSec,
         )
         return raw.map { cue ->
             val id = cue.slot?.let { draft.sets.getOrNull(cue.setIndex)?.exerciseIds?.getOrNull(it) }
@@ -1154,6 +1210,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             workout.workSec ?: 25,
             workout.restSec ?: 5,
             workout.breakSec ?: 300,
+            workout.warmupSec ?: 0,
+            workout.cooldownSec ?: 0,
         )
         return raw.map { cue ->
             val block = cue.slot?.let { lists.getOrNull(cue.setIndex)?.getOrNull(it) }
@@ -1179,9 +1237,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         runningClock = true
         publishClock()
         persistClock()
-        if (play) {
-            if (cue.phase == PHASE_WORK) tones.high() else tones.low()
+        if (play) playCueStart(cue.phase)
+    }
+
+    private fun playCueStart(phase: String) {
+        when (phase) {
+            PHASE_WORK -> tones.ring()
+            PHASE_WARMUP -> tones.drum()
+            PHASE_REST -> tones.whistle()
+            PHASE_BREAK, PHASE_COOLDOWN -> tones.bell()
         }
+    }
+
+    private fun playCueBoundary(finished: String, next: String?) {
+        val whistle = finished == PHASE_WARMUP || (finished == PHASE_WORK && next != PHASE_REST)
+        if (whistle) tones.whistle()
+        if (next == null) tones.horn()
     }
 
     private suspend fun completeCue(actualSec: Int) {
@@ -1192,7 +1263,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             StoredCue(cue.phase, cue.setIndex, cue.exerciseId, cue.round, actualSec),
         )
         cueIndex += 1
-        if (cueIndex >= cues.size) finishClock(recordCurrent = false) else startCue(true)
+        val next = cues.getOrNull(cueIndex)
+        playCueBoundary(cue.phase, next?.phase)
+        if (next == null) finishClock(recordCurrent = false) else startCue(true)
     }
 
     private fun elapsedSec(cue: ResolvedCue): Int {
@@ -1280,7 +1353,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             fraction = if (cue.seconds <= 0) 0f else (remainingMs.toFloat() / (cue.seconds * 1000f)).coerceIn(0f, 1f),
             work = cue.phase == PHASE_WORK,
             running = runningClock,
-            now = if (cue.phase == PHASE_WORK) cue.name else "Rest",
+            now = when (cue.phase) {
+                PHASE_WORK -> cue.name
+                PHASE_WARMUP -> "Warmup"
+                PHASE_COOLDOWN -> "Cooldown"
+                else -> "Rest"
+            },
             next = next,
         )
     }
@@ -1344,6 +1422,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (pos.finished) {
+                tones.horn()
                 repo.finish(active.workoutId)
                 repo.clearActive()
                 showLog(active.workoutId)
@@ -1358,7 +1437,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 cueEndElapsed = SystemClock.elapsedRealtime() + remainingMs
                 if (pos.index != active.index) {
                     val cue = built.getOrNull(pos.index)
-                    if (cue?.phase == PHASE_WORK) tones.high() else tones.low()
+                    if (cue != null) playCueStart(cue.phase)
                 }
             }
             publishClock()

@@ -97,8 +97,8 @@ private fun titleOf(screen: Screen, model: AppModel): String = when (screen) {
     Screen.Strength -> strengthLabel(model.strength?.kind ?: "HEAVY")
     Screen.StrengthTime -> "Total time"
     Screen.Hiit -> "HIIT"
-    Screen.PatternPick -> "Pattern"
-    Screen.PatternEdit -> "Edit pattern"
+    Screen.PatternPick -> "Order"
+    Screen.PatternEdit -> "Edit order"
     is Screen.SetMenu -> "Set"
     Screen.Picker -> if (model.picker is Picker.StrengthSwap || model.picker is Picker.PickSwap) {
         "Choose a replacement"

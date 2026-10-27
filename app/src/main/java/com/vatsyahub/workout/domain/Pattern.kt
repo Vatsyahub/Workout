@@ -33,17 +33,20 @@ private val numberWords = listOf(
 
 fun numberWord(n: Int): String = numberWords.getOrNull(n) ?: n.toString()
 
-fun patternLabel(passes: List<Pass>): String {
-    if (passes.isEmpty()) return "Pattern"
-    return passes.joinToString(" · ") { pass ->
-        if (pass.kind == EACH) {
-            if (pass.times == 2) "Each twice" else "Each ${pass.times}"
-        } else if (pass.times == 1) {
-            "One pass"
-        } else {
-            "${numberWord(pass.times)} passes"
-        }
+fun orderLabel(kind: String, times: Int): String {
+    val count = times.coerceAtLeast(1)
+    return if (kind == EACH) {
+        if (count == 2) "Each exercise twice in a row" else "Each exercise $count times in a row"
+    } else if (count == 1) {
+        "In order, once"
+    } else {
+        "In order, $count times"
     }
+}
+
+fun patternLabel(passes: List<Pass>): String {
+    if (passes.isEmpty()) return "Order"
+    return passes.joinToString(" · ") { orderLabel(it.kind, it.times) }
 }
 
 fun fingerprint(passes: List<Pass>): String = passes.joinToString("|") { "${it.kind}:${it.times}" }

@@ -54,7 +54,10 @@ class WorkoutLogicTest {
             names,
         )
         assertEquals(6, roundsOf(sample))
-        assertEquals("One pass · Each twice · Three passes", patternLabel(sample))
+        assertEquals(
+            "In order, once · Each exercise twice in a row · In order, 3 times",
+            patternLabel(sample),
+        )
     }
 
     @Test

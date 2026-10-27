@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.vatsyahub.workout.data.passesOf
 import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.domain.EACH
@@ -74,6 +75,7 @@ import com.vatsyahub.workout.domain.kmPaceSeconds
 import com.vatsyahub.workout.domain.parseDecimal
 import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
+import com.vatsyahub.workout.domain.orderLabel
 import com.vatsyahub.workout.domain.patternLabel
 import com.vatsyahub.workout.domain.roundsOf
 import com.vatsyahub.workout.domain.showsWeight
@@ -150,20 +152,11 @@ fun StrengthScreen(model: AppModel) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                CompactSets(formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight), showWeight) {
-                    line.sets.forEachIndexed { setIndex, set ->
-                        SetRow(
-                            label = "Set ${setIndex + 1}",
-                            reps = set.reps,
-                            weight = set.weightKg,
-                            heavy = showWeight,
-                            onRemove = { model.removeDraftSet(lineIndex, setIndex) },
-                            onReps = { model.setDraftReps(lineIndex, setIndex, it) },
-                            onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
-                        )
-                    }
-                }
-                QuietButton("Add set") { model.addDraftSet(lineIndex) }
+                CompactSets(
+                    formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                    showWeight,
+                    line.sets,
+                ) { model.replaceDraftSets(lineIndex, it) }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
@@ -195,9 +188,11 @@ fun StrengthTimeScreen(model: AppModel) {
 internal fun CompactSets(
     summary: String,
     heavy: Boolean,
-    editors: @Composable () -> Unit,
+    sets: List<DraftSet>,
+    onSave: (List<DraftSet>) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(sets) }
     if (summary.isNotBlank()) {
         Text(
             "Sets",
@@ -210,13 +205,35 @@ internal fun CompactSets(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { open = !open }
+                .clickable {
+                    if (!open) draft = sets
+                    open = !open
+                }
                 .padding(top = 2.dp, bottom = 2.dp),
         )
     }
     if (open && summary.isNotBlank()) {
         SetTableHeader(heavy)
-        editors()
+        draft.forEachIndexed { index, set ->
+            SetRow(
+                label = "Set ${index + 1}",
+                reps = set.reps,
+                weight = set.weightKg,
+                heavy = heavy,
+                onRemove = { draft = draft.filterIndexed { row, _ -> row != index } },
+                onReps = { reps ->
+                    draft = draft.toMutableList().also { it[index] = it[index].copy(reps = reps.coerceAtLeast(0)) }
+                },
+                onWeight = { weight ->
+                    draft = draft.toMutableList().also { it[index] = it[index].copy(weightKg = weight) }
+                },
+            )
+        }
+        QuietButton("Add set") { draft = draft + DraftSet(8, null) }
+        SoftButton("Save") {
+            onSave(draft.ifEmpty { listOf(DraftSet(8, null)) })
+            open = false
+        }
     }
 }
 
@@ -263,40 +280,43 @@ fun SetRow(
 }
 
 @Composable
+private fun GapTime(label: String, seconds: Int, fallback: Int, onChange: (Int) -> Unit) {
+    Text(label, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+    if (seconds <= 0) {
+        Text("Removed", style = MaterialTheme.typography.titleMedium)
+        QuietButton("Add") { onChange(fallback) }
+    } else {
+        val shown = if (seconds < 60) "$seconds s" else formatBreak(seconds)
+        Editable(shown, durationRaw(seconds), style = MaterialTheme.typography.titleMedium, number = true) { text ->
+            parseDuration(text, true)?.let { onChange(it.coerceAtLeast(0)) }
+        }
+        QuietButton("Remove") { onChange(0) }
+    }
+}
+
+@Composable
 fun HiitScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val draft = model.hiit ?: return
     val shared = draft.sets.all { it.shared }
     val chooseDate = pickDate(draft.day) { model.setHiitDay(it) }
-    val action = if (draft.manual) "Save" else "Start"
+    val action = if (draft.manual) "Save" else "Open clock"
     val patternName = if (shared) patternLabel(draft.template) else "Mixed"
     val roundCount = if (shared) roundsOf(draft.template).toString() else "Mixed"
     ActionPage(action, { if (draft.manual) model.saveManualHiit() else model.startClock() }) {
         Panel {
             Text("HIIT", style = MaterialTheme.typography.titleLarge)
             StatTile("Date", dayText(draft.day), Modifier.fillMaxWidth(), chooseDate)
-            StatTile("Pattern", patternName, Modifier.fillMaxWidth()) { model.openPatterns(null) }
-            StatTile("Rounds", roundCount, Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text("Work", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                    Editable("${draft.workSec} s", draft.workSec.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
-                        text.toIntOrNull()?.let { model.setWork(it) }
-                    }
-                }
-                Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                    Text("Rest", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                    Editable("${draft.restSec} s", draft.restSec.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
-                        text.toIntOrNull()?.let { model.setRest(it) }
-                    }
-                }
-                Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                    Text("Break", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                    Editable(formatBreak(draft.breakSec), durationRaw(draft.breakSec), style = MaterialTheme.typography.titleMedium, number = true) { text ->
-                        parseDuration(text, true)?.let { model.setBreak(it) }
-                    }
-                }
+            StatTile("Order", patternName, Modifier.fillMaxWidth()) { model.openPatterns(null) }
+            StatTile("Times around", roundCount, Modifier.fillMaxWidth())
+            Text("Work", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            Editable("${draft.workSec} s", draft.workSec.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
+                text.toIntOrNull()?.let { model.setWork(it) }
             }
+            GapTime("Rest", draft.restSec, 5) { model.setRest(it) }
+            GapTime("Break", draft.breakSec, 300) { model.setBreak(it) }
+            GapTime("Warmup", draft.warmupSec, 120) { model.setWarmup(it) }
+            GapTime("Cooldown", draft.cooldownSec, 300) { model.setCooldown(it) }
         }
         draft.sets.forEachIndexed { setIndex, set ->
             Panel {
@@ -362,9 +382,10 @@ fun PatternPickScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     Page {
         snap.patterns.sortedBy { it.label }.forEach { pattern ->
-            WorkoutCard(pattern.label, "Use this pattern", icon = Icons.Filled.Timer) { model.applyPattern(pattern.id) }
+            val label = patternLabel(snap.passesOf(pattern.id))
+            WorkoutCard(label, "Use this order", icon = Icons.Filled.Timer) { model.applyPattern(pattern.id) }
         }
-        Door(Icons.Filled.Timer, "Edit patterns", "Change passes and each-rounds") { model.open(Screen.PatternEdit) }
+        Door(Icons.Filled.Timer, "Edit order", "Change how the exercises go around") { model.open(Screen.PatternEdit) }
     }
 }
 
@@ -380,15 +401,20 @@ fun PatternEditScreen(model: AppModel) {
         model.back()
     }) {
         rows.forEachIndexed { index, row ->
-            val each = row.kind == EACH
+            val backToBack = row.kind == EACH
+            val count = row.times.toIntOrNull() ?: 1
             Panel {
-                Text(if (each) "Each" else "Pass", style = MaterialTheme.typography.titleLarge)
+                Text(orderLabel(row.kind, count), style = MaterialTheme.typography.titleLarge)
                 Text(
-                    if (each) "Repeat each exercise this many times." else "A pass through every exercise.",
+                    if (backToBack) {
+                        "One exercise, back to back, before the next."
+                    } else {
+                        "A, then B, then C."
+                    },
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                Field(if (each) "Each" else "Pass", row.times, number = true) { text ->
+                Field("Times", row.times, number = true) { text ->
                     rows = rows.toMutableList().also { it[index] = row.copy(times = text) }
                 }
                 if (rows.size > 1) {
@@ -398,8 +424,8 @@ fun PatternEditScreen(model: AppModel) {
                 }
             }
         }
-        Door(Icons.Filled.Add, "Pass", "Add a pass through every exercise") { rows = rows + PassRow(PASS, "1") }
-        Door(Icons.Filled.Add, "Each", "Repeat each exercise on its own") { rows = rows + PassRow(EACH, "2") }
+        Door(Icons.Filled.Add, "In order", "A, then B, then C") { rows = rows + PassRow(PASS, "1") }
+        Door(Icons.Filled.Add, "Back to back", "A, A, then B, B, then C, C") { rows = rows + PassRow(EACH, "2") }
     }
 }
 
@@ -407,7 +433,7 @@ fun PatternEditScreen(model: AppModel) {
 fun SetMenuScreen(model: AppModel, index: Int) {
     val set = model.hiit?.sets?.getOrNull(index) ?: return
     Page {
-        Door(Icons.Filled.Timer, patternLabel(set.passes), "Change the pattern for this set") { model.openPatterns(index) }
+        Door(Icons.Filled.Timer, patternLabel(set.passes), "Change the order for this set") { model.openPatterns(index) }
         if ((model.hiit?.sets?.size ?: 0) > 1) {
             Door(Icons.Filled.Delete, "Remove set", "Take this set out of the workout") { model.removeHiitSet(index) }
         }

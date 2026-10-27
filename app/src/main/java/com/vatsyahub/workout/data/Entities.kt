@@ -86,6 +86,8 @@ data class Workout(
     val workSec: Int? = null,
     val restSec: Int? = null,
     val breakSec: Int? = null,
+    val warmupSec: Int? = null,
+    val cooldownSec: Int? = null,
     val finished: Boolean = true,
     val distanceM: Double? = null,
     val gradient: Double? = null,

@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FieldValue::class,
         ActiveSession::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class WorkoutDatabase : RoomDatabase() {
@@ -38,9 +38,16 @@ abstract class WorkoutDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE workouts ADD COLUMN warmupSec INTEGER")
+                db.execSQL("ALTER TABLE workouts ADD COLUMN cooldownSec INTEGER")
+            }
+        }
+
         fun create(context: Context): WorkoutDatabase =
             Room.databaseBuilder(context, WorkoutDatabase::class.java, "workout.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         db.execSQL(
