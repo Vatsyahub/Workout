@@ -211,7 +211,6 @@ fun BuildScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val build = model.build
     val pool = snap.pool(build.kind)
-    val parts = pool.map { it.bodyPart }.distinct().sortedBy { it.lowercase() }
     if (pool.isEmpty()) {
         ActionPage("Add exercise", { model.tab(Screen.Exercises) }) {
             Panel {
@@ -225,45 +224,27 @@ fun BuildScreen(model: AppModel) {
         }
         return
     }
-    val byType = build.mode == "TYPE"
-    val rows = if (byType) {
-        pool.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
-    } else {
-        parts
-    }.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
     ActionPage("Build", { model.drawBuild() }) {
         Text(
-            "Choose what to draw, then set how many exercises. Zero skips that row.",
+            "Choose how many exercises per body part. 0 skips that part.",
             color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
         )
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            ChoiceChip("Body part", !byType) { model.setBuildMode("PART") }
-            ChoiceChip("Workout type", byType) { model.setBuildMode("TYPE") }
-        }
-        if (rows.isEmpty()) {
+        if (build.parts.isEmpty()) {
             Panel {
-                Text(
-                    if (byType) {
-                        "No workout types yet. Add a type on an exercise, then come back."
-                    } else {
-                        "These exercises have no body part yet."
-                    },
-                )
+                Text("These exercises have no body part yet.")
             }
         }
-        rows.forEach { name ->
-            val index = build.parts.indexOfFirst { it.bodyPart.equals(name, true) }
-            val count = build.parts.getOrNull(index)?.count ?: 0
+        build.parts.forEachIndexed { index, part ->
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            if (byType) "Workout type" else "Body part",
+                            "Body part",
                             color = MaterialTheme.colorScheme.secondary,
                             style = MaterialTheme.typography.labelLarge,
                         )
-                        Text(name, style = MaterialTheme.typography.titleLarge)
+                        Text(part.bodyPart, style = MaterialTheme.typography.titleLarge)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
@@ -272,11 +253,11 @@ fun BuildScreen(model: AppModel) {
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { if (index >= 0) model.setPartCount(index, count - 1) }) {
+                            IconButton(onClick = { model.setPartCount(index, part.count - 1) }) {
                                 Icon(Icons.Filled.Remove, contentDescription = "Fewer exercises")
                             }
-                            Text(count.toString(), style = MaterialTheme.typography.headlineSmall)
-                            IconButton(onClick = { if (index >= 0) model.setPartCount(index, count + 1) }) {
+                            Text(part.count.toString(), style = MaterialTheme.typography.headlineSmall)
+                            IconButton(onClick = { model.setPartCount(index, part.count + 1) }) {
                                 Icon(Icons.Filled.Add, contentDescription = "More exercises")
                             }
                         }

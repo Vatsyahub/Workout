@@ -18,7 +18,6 @@ import com.vatsyahub.workout.data.blockName
 import com.vatsyahub.workout.data.passesOf
 import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.poolExercises
-import com.vatsyahub.workout.data.typesOf
 import com.vatsyahub.workout.domain.DefaultPasses
 import com.vatsyahub.workout.domain.EACH
 import com.vatsyahub.workout.domain.PASS
@@ -83,7 +82,7 @@ sealed interface Picker {
     data class BodyPart(val index: Int) : Picker
 }
 
-data class BuildState(val kind: String, val parts: List<PartAsk>, val mode: String = "PART")
+data class BuildState(val kind: String, val parts: List<PartAsk>)
 
 data class ClockUi(
     val workoutId: Long,
@@ -229,22 +228,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun beginBuild(kind: String) {
         if (busy()) return
-        build = buildFor(kind, "PART")
+        val parts = snap.value.pool(kind)
+            .map { it.bodyPart.trim() }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+            .map { PartAsk(it, 0) }
+        build = BuildState(kind, parts)
         open(Screen.Build)
-    }
-
-    fun setBuildMode(mode: String) {
-        build = buildFor(build.kind, mode)
-    }
-
-    private fun buildFor(kind: String, mode: String): BuildState {
-        val pool = snap.value.pool(kind)
-        val names = if (mode == "TYPE") {
-            pool.flatMap { exercise -> snap.value.typesOf(exercise.id).map { it.name } }
-        } else {
-            pool.map { it.bodyPart }
-        }.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
-        return BuildState(kind, names.map { PartAsk(it, 0) }, mode)
     }
 
     fun choosePart(index: Int, part: String) {
@@ -275,15 +266,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val lines = ArrayList<StrengthLine>()
         for (ask in build.parts) {
             if (ask.bodyPart.isBlank() || ask.count < 1) continue
-            val ids = if (build.mode == "TYPE") {
-                pool.filter { exercise ->
-                    snap.value.typesOf(exercise.id).any { it.name.equals(ask.bodyPart, true) }
-                }.map { it.id }
-            } else {
-                pool.filter { it.bodyPart.equals(ask.bodyPart, ignoreCase = true) }.map { it.id }
-            }
+            val ids = pool.filter { it.bodyPart.equals(ask.bodyPart, ignoreCase = true) }.map { it.id }
             drawBodyPart(ids, ask.count, Random).forEach { id ->
-                lines += StrengthLine(id, List(3) { DraftSet(8, null) }, ask.bodyPart, build.mode)
+                lines += StrengthLine(id, List(3) { DraftSet(8, null) })
             }
         }
         if (lines.isEmpty()) return
@@ -340,42 +325,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (stack.lastOrNull() == Screen.Picker) back()
     }
 
-    fun lineChoices(line: Int): List<com.vatsyahub.workout.data.Exercise> {
-        val draft = strength ?: return emptyList()
-        val row = draft.lines.getOrNull(line) ?: return emptyList()
-        return choicesFor(draft.kind, row)
-    }
-
-    private fun choicesFor(kind: String, row: StrengthLine): List<com.vatsyahub.workout.data.Exercise> {
-        val pool = snap.value.pool(kind)
-        val group = row.group.ifBlank {
-            snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart.orEmpty()
-        }
-        return if (row.groupKind == "TYPE" && group.isNotBlank()) {
-            pool.filter { exercise -> snap.value.typesOf(exercise.id).any { it.name.equals(group, true) } }
-        } else {
-            pool
-        }
-    }
-
-    private fun rerollIds(kind: String, row: StrengthLine): List<Long> {
-        val pool = snap.value.pool(kind)
-        if (row.groupKind == "TYPE") {
-            if (row.group.isBlank()) return pool.map { it.id }
-            return pool.filter { exercise ->
-                snap.value.typesOf(exercise.id).any { it.name.equals(row.group, true) }
-            }.map { it.id }
-        }
-        val part = row.group.ifBlank { snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart.orEmpty() }
-        if (part.isBlank()) return pool.map { it.id }
-        return pool.filter { it.bodyPart.equals(part, true) }.map { it.id }
-    }
-
     fun rerollDraftLine(line: Int) {
         val draft = strength ?: return
         val row = draft.lines.getOrNull(line) ?: return
-        val ids = rerollIds(draft.kind, row)
-        if (ids.isEmpty()) return
+        val part = snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart ?: return
+        val ids = snap.value.pool(draft.kind).filter { it.bodyPart.equals(part, true) }.map { it.id }
         val next = rerollOne(ids, row.exerciseId, Random)
         val lines = draft.lines.toMutableList()
         lines[line] = row.copy(exerciseId = next)
@@ -385,16 +339,12 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun rerollDraftAll() {
         val draft = strength ?: return
         val indexes = draft.lines.indices.groupBy { index ->
-            val row = draft.lines[index]
-            row.groupKind to row.group.ifBlank {
-                snap.value.exercises.find { it.id == row.exerciseId }?.bodyPart
-            }
+            snap.value.exercises.find { it.id == draft.lines[index].exerciseId }?.bodyPart
         }
         val ids = draft.lines.map { it.exerciseId }.toMutableList()
-        for ((key, group) in indexes) {
-            val sample = draft.lines[group.first()]
-            val pool = rerollIds(draft.kind, sample)
-            if (pool.isEmpty() || key.second == null) continue
+        for ((part, group) in indexes) {
+            if (part == null) continue
+            val pool = snap.value.pool(draft.kind).filter { it.bodyPart.equals(part, true) }.map { it.id }
             val next = rerollAll(group.map { ids[it] }, pool, Random)
             group.zip(next).forEach { (index, id) -> ids[index] = id }
         }
@@ -826,9 +776,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 val draft = strength ?: return
                 val lines = draft.lines.toMutableList()
                 val row = lines.getOrNull(request.line) ?: return
-                val chosenPart = snap.value.exercises.find { it.id == id }?.bodyPart.orEmpty()
-                val group = if (row.groupKind == "TYPE") row.group else chosenPart.ifBlank { row.group }
-                lines[request.line] = row.copy(exerciseId = id, group = group)
+                lines[request.line] = row.copy(exerciseId = id)
                 strength = draft.copy(lines = lines)
             }
             is Picker.HiitSwap -> swapHiit(request.set, request.line, id)

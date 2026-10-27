@@ -98,7 +98,7 @@ private fun titleOf(screen: Screen, model: AppModel): String = when (screen) {
     Screen.PatternPick -> "Pattern"
     Screen.PatternEdit -> "Edit pattern"
     is Screen.SetMenu -> "Set"
-    Screen.Picker -> "Choose exercise"
+    Screen.Picker -> if (model.picker is Picker.StrengthSwap) "Choose a replacement" else "Choose exercise"
     Screen.OutingForm -> "Outing"
     is Screen.Month -> "History"
     is Screen.LogDetail -> "Workout"

@@ -87,14 +87,11 @@ fun StrengthScreen(model: AppModel) {
                             .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
                     ) {
                         Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
-                        val part = exercise?.bodyPart.orEmpty()
-                        if (part.isNotBlank()) {
-                            Text("Body part · $part", color = MaterialTheme.colorScheme.secondary)
-                        }
-                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
-                            Text("Workout type · ${line.group}", color = MaterialTheme.colorScheme.secondary)
-                        }
-                        Text("Tap the name to choose another", color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            "Body part · ${exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None"}",
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                        Text("Tap the name to choose a replacement", color = MaterialTheme.colorScheme.secondary)
                     }
                     IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
                         Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
@@ -307,23 +304,17 @@ fun PickerScreen(model: AppModel) {
     Page {
         when (request) {
             is Picker.StrengthSwap -> {
-                val line = model.strength?.lines?.getOrNull(request.line)
-                val choices = model.lineChoices(request.line)
-                val fromType = line?.groupKind == "TYPE" && line.group.isNotBlank()
+                val kind = model.strength?.kind ?: "HEAVY"
                 Text(
-                    if (fromType) {
-                        "Exercises in ${line?.group}. Tap one to use it here."
-                    } else {
-                        "Any exercise in this workout. Tap one to use it here."
-                    },
+                    "Choose a replacement exercise.",
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
                 )
-                choices.sortedBy { it.name.lowercase() }.forEach { exercise ->
-                    Word(
-                        if (exercise.bodyPart.isBlank()) exercise.name else "${exercise.name} · ${exercise.bodyPart}",
-                    ) { model.pickExercise(exercise.id) }
-                }
+                snap.pool(kind)
+                    .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
+                    .forEach { exercise ->
+                        Word("${exercise.name} · ${exercise.bodyPart}") { model.pickExercise(exercise.id) }
+                    }
             }
             is Picker.HiitSwap -> {
                 Word("Reroll") {
