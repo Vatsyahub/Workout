@@ -2,7 +2,9 @@ package com.vatsyahub.workout.ui
 
 import com.vatsyahub.workout.domain.DefaultPasses
 import com.vatsyahub.workout.domain.Pass
+import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.expand
+import com.vatsyahub.workout.domain.savedExerciseSets
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
 
@@ -11,6 +13,31 @@ private val lineKeys = AtomicLong(1)
 fun lineKey(): Long = lineKeys.getAndIncrement()
 
 data class DraftSet(val reps: Int, val weightKg: Double?)
+
+internal data class EditorSet(val key: Long, val reps: Int, val weightKg: Double?)
+
+private val editorSetKeys = AtomicLong(1)
+
+internal fun editorSets(sets: List<DraftSet>): List<EditorSet> =
+    sets.map { EditorSet(editorSetKeys.getAndIncrement(), it.reps, it.weightKg) }
+
+internal fun List<EditorSet>.withReps(key: Long, reps: Int): List<EditorSet> =
+    map { if (it.key == key) it.copy(reps = reps.coerceAtLeast(0)) else it }
+
+internal fun List<EditorSet>.withWeight(key: Long, weightKg: Double?): List<EditorSet> =
+    map { if (it.key == key) it.copy(weightKg = weightKg) else it }
+
+internal fun List<EditorSet>.withoutSet(key: Long): List<EditorSet> =
+    filter { it.key != key }
+
+internal fun List<EditorSet>.withAddedSet(): List<EditorSet> =
+    this + EditorSet(editorSetKeys.getAndIncrement(), 8, null)
+
+internal fun List<EditorSet>.savedDraft(previous: List<DraftSet>): List<DraftSet> =
+    savedExerciseSets(
+        previous.map { SetLoad(it.reps, it.weightKg) },
+        map { SetLoad(it.reps, it.weightKg) },
+    ).map { DraftSet(it.reps, it.weightKg) }
 
 data class StrengthLine(
     val exerciseId: Long,

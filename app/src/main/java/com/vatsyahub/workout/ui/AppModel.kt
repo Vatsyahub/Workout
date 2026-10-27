@@ -71,6 +71,7 @@ import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.SetLoad
+import com.vatsyahub.workout.domain.savedExerciseSets
 import com.vatsyahub.workout.domain.repeatStrength
 import com.vatsyahub.workout.domain.rerollAll
 import com.vatsyahub.workout.domain.rerollInSlot
@@ -585,7 +586,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun replacePickedSets(index: Int, sets: List<DraftSet>) {
         val picks = build.picks.toMutableList()
         val line = picks.getOrNull(index) ?: return
-        picks[index] = line.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) }, setsEdited = true)
+        picks[index] = line.copy(sets = exactSets(line.sets, sets), setsEdited = true)
         build = build.copy(picks = picks)
     }
 
@@ -724,7 +725,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val draft = strength ?: return
         val lines = draft.lines.toMutableList()
         val row = lines.getOrNull(line) ?: return
-        lines[line] = row.copy(sets = sets.ifEmpty { listOf(DraftSet(8, null)) }, setsEdited = true)
+        lines[line] = row.copy(sets = exactSets(row.sets, sets), setsEdited = true)
         strength = draft.copy(lines = lines)
     }
 
@@ -1611,8 +1612,17 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun exactSets(previous: List<DraftSet>, edited: List<DraftSet>): List<DraftSet> =
+        savedExerciseSets(
+            previous.map { SetLoad(it.reps, it.weightKg) },
+            edited.map { SetLoad(it.reps, it.weightKg) },
+        ).map { DraftSet(it.reps, it.weightKg) }
+
     fun replaceSavedSets(blockId: Long, sets: List<DraftSet>) = launch {
-        repo.replaceBlockSets(blockId, sets.map { it.reps to it.weightKg })
+        val previous = snap.value.sets.filter { it.blockId == blockId }.sortedBy { it.position }
+            .map { DraftSet(it.reps, it.weightKg) }
+        val saved = exactSets(previous, sets)
+        repo.replaceBlockSets(blockId, saved.map { it.reps to it.weightKg })
     }
 
     fun changeSet(id: Long, reps: Int, weight: Double?) = launch { repo.updateSet(id, reps, weight) }

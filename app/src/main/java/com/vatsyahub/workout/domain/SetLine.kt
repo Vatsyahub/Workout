@@ -21,6 +21,15 @@ fun formatSets(sets: List<SetLoad>, showWeight: Boolean): String {
     }
 }
 
+/** What Save stores. [previous] is not merged back, and defaults are not laid on top. */
+fun savedExerciseSets(
+    @Suppress("UNUSED_PARAMETER") previous: List<SetLoad>,
+    edited: List<SetLoad>,
+): List<SetLoad> {
+    if (edited.isEmpty()) return listOf(SetLoad(8, null))
+    return edited.map { SetLoad(it.reps, it.weightKg) }
+}
+
 private data class SetGroup(val count: Int, val reps: Int, val weightKg: Double?)
 
 private fun sameWeight(left: Double?, right: Double?): Boolean = weightCents(left) == weightCents(right)

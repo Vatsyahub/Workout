@@ -29,6 +29,14 @@ import com.vatsyahub.workout.domain.moveItem
 import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.formatSets
+import com.vatsyahub.workout.domain.savedExerciseSets
+import com.vatsyahub.workout.ui.DraftSet
+import com.vatsyahub.workout.ui.editorSets
+import com.vatsyahub.workout.ui.savedDraft
+import com.vatsyahub.workout.ui.withAddedSet
+import com.vatsyahub.workout.ui.withReps
+import com.vatsyahub.workout.ui.withWeight
+import com.vatsyahub.workout.ui.withoutSet
 import com.vatsyahub.workout.domain.kmPaceSeconds
 import com.vatsyahub.workout.domain.PickCandidate
 import com.vatsyahub.workout.domain.classifyPickedKind
@@ -257,6 +265,55 @@ class WorkoutLogicTest {
         val hike = lines.single { it.startsWith("Hike") }
         assertTrue(hike.contains("400 m"))
         assertEquals(4L, bestsReport(today, marks).single { it.text.startsWith("Hike") }.workoutId)
+    }
+
+    @Test
+    fun savingEverySetPersistsIncludingOneThatLookedFixed() {
+        val prescribed = listOf(DraftSet(6, 40.0), DraftSet(6, 40.0), DraftSet(6, 40.0))
+        var rows = editorSets(prescribed)
+        rows = rows.withReps(rows[0].key, 5)
+        rows = rows.withWeight(rows[0].key, 42.5)
+        rows = rows.withReps(rows[1].key, 7)
+        rows = rows.withWeight(rows[1].key, 44.0)
+        rows = rows.withReps(rows[2].key, 9)
+        rows = rows.withWeight(rows[2].key, 46.0)
+        val saved = rows.savedDraft(prescribed)
+        assertEquals(listOf(5, 7, 9), saved.map { it.reps })
+        assertEquals(listOf(42.5, 44.0, 46.0), saved.map { it.weightKg })
+        assertEquals(
+            listOf(SetLoad(5, 42.5), SetLoad(7, 44.0), SetLoad(9, 46.0)),
+            savedExerciseSets(
+                prescribed.map { SetLoad(it.reps, it.weightKg) },
+                saved.map { SetLoad(it.reps, it.weightKg) },
+            ),
+        )
+        val defaults = listOf(
+            List(3) { SetLoad(6) },
+            List(3) { SetLoad(10) },
+            List(3) { SetLoad(8) },
+            List(3) { SetLoad(12) },
+        )
+        val custom = listOf(SetLoad(4, 20.0), SetLoad(3, 22.5))
+        defaults.forEach { prescription ->
+            assertEquals(custom, savedExerciseSets(prescription, custom))
+        }
+
+        var trimmed = editorSets(prescribed)
+        val locked = trimmed[0].key
+        trimmed = trimmed.withReps(locked, 4)
+        trimmed = trimmed.withoutSet(locked)
+        trimmed = trimmed.withReps(locked, 4)
+        trimmed = trimmed.withAddedSet()
+        trimmed = trimmed.withReps(trimmed.last().key, 3)
+        trimmed = trimmed.withWeight(trimmed.last().key, 15.0)
+        val after = trimmed.savedDraft(prescribed)
+        assertEquals(listOf(6, 6, 3), after.map { it.reps })
+        assertEquals(listOf(40.0, 40.0, 15.0), after.map { it.weightKg })
+        assertEquals(3, after.size)
+        assertEquals(
+            listOf(SetLoad(6, 40.0), SetLoad(6, 40.0), SetLoad(3, 15.0)),
+            savedExerciseSets(prescribed.map { SetLoad(it.reps, it.weightKg) }, after.map { SetLoad(it.reps, it.weightKg) }),
+        )
     }
 
     @Test

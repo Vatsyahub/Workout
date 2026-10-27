@@ -291,7 +291,6 @@ internal fun CompactSets(
     onSave: (List<DraftSet>) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    var draft by remember { mutableStateOf(sets) }
     if (summary.isNotBlank()) {
         Text(
             "Sets",
@@ -304,36 +303,41 @@ internal fun CompactSets(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    if (!open) draft = sets
-                    open = !open
-                }
+                .clickable { open = !open }
                 .padding(top = 2.dp, bottom = 2.dp),
         )
     }
     if (open && summary.isNotBlank()) {
-        SetTableHeader(heavy)
-        draft.forEachIndexed { index, set ->
-            SetRow(
-                label = "Set ${index + 1}",
-                reps = set.reps,
-                weight = set.weightKg,
-                heavy = heavy,
-                onRemove = { draft = draft.filterIndexed { row, _ -> row != index } },
-                onReps = { reps ->
-                    draft = draft.toMutableList().also { it[index] = it[index].copy(reps = reps.coerceAtLeast(0)) }
-                },
-                onWeight = { weight ->
-                    draft = draft.toMutableList().also { it[index] = it[index].copy(weightKg = weight) }
-                },
-            )
-        }
-        QuietButton("Add set") { draft = draft + DraftSet(8, null) }
-        SoftButton("Save") {
-            onSave(draft.ifEmpty { listOf(DraftSet(8, null)) })
+        EditableSets(sets, heavy) { saved ->
+            onSave(saved)
             open = false
         }
     }
+}
+
+@Composable
+internal fun EditableSets(
+    initial: List<DraftSet>,
+    heavy: Boolean,
+    onSave: (List<DraftSet>) -> Unit,
+) {
+    var rows by remember { mutableStateOf(editorSets(initial)) }
+    SetTableHeader(heavy)
+    rows.forEachIndexed { index, row ->
+        key(row.key) {
+            SetRow(
+                label = "Set ${index + 1}",
+                reps = row.reps,
+                weight = row.weightKg,
+                heavy = heavy,
+                onRemove = { rows = rows.withoutSet(row.key) },
+                onReps = { reps -> rows = rows.withReps(row.key, reps) },
+                onWeight = { weight -> rows = rows.withWeight(row.key, weight) },
+            )
+        }
+    }
+    QuietButton("Add set") { rows = rows.withAddedSet() }
+    SoftButton("Save") { onSave(rows.savedDraft(initial)) }
 }
 
 @Composable

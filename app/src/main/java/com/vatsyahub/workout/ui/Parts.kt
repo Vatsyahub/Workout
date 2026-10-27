@@ -566,7 +566,10 @@ fun BoxField(
     var focused by remember { mutableStateOf(false) }
     BasicTextField(
         value = if (focused) text else value,
-        onValueChange = { text = it },
+        onValueChange = { next ->
+            text = next
+            onCommit(next)
+        },
         singleLine = true,
         textStyle = MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onBackground),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -591,7 +594,7 @@ fun BoxField(
             .padding(horizontal = 10.dp, vertical = 8.dp)
             .onFocusChanged { state ->
                 if (state.isFocused) {
-                    text = value
+                    if (!focused) text = value
                     focused = true
                 } else if (focused) {
                     focused = false

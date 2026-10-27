@@ -505,7 +505,6 @@ private fun PickedExerciseCard(
     handle: @Composable () -> Unit,
 ) {
     var editing by remember(line.key) { mutableStateOf(false) }
-    var draft by remember(line.key) { mutableStateOf(line.sets) }
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             OrderBadge(number)
@@ -526,30 +525,10 @@ private fun PickedExerciseCard(
         if (summary.isNotBlank()) {
             Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
         }
-        SoftButton("Sets and reps") {
-            if (!editing) draft = line.sets
-            editing = !editing
-        }
+        SoftButton("Sets and reps") { editing = !editing }
         if (editing) {
-            SetTableHeader(showWeight)
-            draft.forEachIndexed { setIndex, set ->
-                SetRow(
-                    label = "Set ${setIndex + 1}",
-                    reps = set.reps,
-                    weight = set.weightKg,
-                    heavy = showWeight,
-                    onRemove = { draft = draft.filterIndexed { index, _ -> index != setIndex } },
-                    onReps = { reps ->
-                        draft = draft.toMutableList().also { it[setIndex] = it[setIndex].copy(reps = reps.coerceAtLeast(0)) }
-                    },
-                    onWeight = { weight ->
-                        draft = draft.toMutableList().also { it[setIndex] = it[setIndex].copy(weightKg = weight) }
-                    },
-                )
-            }
-            QuietButton("Add set") { draft = draft + DraftSet(8, null) }
-            SoftButton("Save") {
-                onSave(draft.ifEmpty { listOf(DraftSet(8, null)) })
+            EditableSets(line.sets, showWeight) { saved ->
+                onSave(saved)
                 editing = false
             }
         }
