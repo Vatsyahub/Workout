@@ -164,6 +164,17 @@ data class ActiveSession(
     val remainingMs: Long = 0,
     val resumedAt: Long = 0,
     val accumulatedMs: Long = 0,
+    val payload: String? = null,
+)
+
+@Serializable
+@Entity(tableName = "plans")
+data class SavedPlan(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val kind: String,
+    val title: String,
+    val savedAt: Long,
+    val body: String,
 )
 
 @Serializable
@@ -183,4 +194,5 @@ data class CarryFile(
     val hiitSets: List<HiitSetRow> = emptyList(),
     val splits: List<Split> = emptyList(),
     val values: List<FieldValue> = emptyList(),
+    val plans: List<SavedPlan> = emptyList(),
 )

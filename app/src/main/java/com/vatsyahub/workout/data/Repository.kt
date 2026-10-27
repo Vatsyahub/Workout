@@ -38,6 +38,7 @@ class Repository(private val db: WorkoutDatabase) {
             "splits",
             "field_values",
             "active_session",
+            "plans",
         ) {
             override fun onInvalidated(tables: Set<String>) {
                 launch(Dispatchers.IO) { send(load()) }
@@ -64,6 +65,7 @@ class Repository(private val db: WorkoutDatabase) {
         splits = dao.splits(),
         values = dao.values(),
         active = dao.active(),
+        plans = dao.plans(),
     )
 
     suspend fun saveProfile(profile: Profile) {
@@ -457,6 +459,16 @@ class Repository(private val db: WorkoutDatabase) {
         dao.clearActive()
     }
 
+    suspend fun savePlan(kind: String, title: String, body: String): Long =
+        dao.insertPlan(
+            SavedPlan(
+                kind = kind,
+                title = title,
+                savedAt = System.currentTimeMillis(),
+                body = body,
+            ),
+        )
+
     suspend fun saveOuting(
         kindId: Long,
         day: LocalDate,
@@ -508,6 +520,7 @@ class Repository(private val db: WorkoutDatabase) {
                 hiitSets = snap.hiitSets,
                 splits = snap.splits,
                 values = snap.values,
+                plans = snap.plans,
             ),
         )
     }
@@ -521,6 +534,7 @@ class Repository(private val db: WorkoutDatabase) {
         if (carry.version != 1) return false
         db.withTransaction {
             dao.clearActive()
+            dao.clearPlans()
             dao.clearSplits()
             dao.clearSets()
             dao.clearHiitSets()
@@ -548,6 +562,7 @@ class Repository(private val db: WorkoutDatabase) {
             if (carry.hiitSets.isNotEmpty()) dao.insertHiitSets(carry.hiitSets)
             if (carry.splits.isNotEmpty()) dao.insertSplits(carry.splits)
             if (carry.values.isNotEmpty()) dao.insertValues(carry.values)
+            if (carry.plans.isNotEmpty()) dao.insertPlans(carry.plans)
         }
         listOf(
             "exercises",
@@ -562,6 +577,7 @@ class Repository(private val db: WorkoutDatabase) {
             "hiit_sets",
             "splits",
             "field_values",
+            "plans",
         ).forEach { bumpSequence(it) }
         return true
     }

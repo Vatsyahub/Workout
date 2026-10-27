@@ -68,8 +68,12 @@ import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.data.summary
 import com.vatsyahub.workout.data.typesOf
 import com.vatsyahub.workout.domain.PickCandidate
+import com.vatsyahub.workout.domain.PlanBody
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.classifyPickedKind
+import com.vatsyahub.workout.domain.decodePlan
+import com.vatsyahub.workout.domain.planDetail
+import com.vatsyahub.workout.domain.planTitle
 import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.matchesBodyPart
 import com.vatsyahub.workout.domain.matchExercises
@@ -116,8 +120,23 @@ fun HomeScreen(model: AppModel) {
             }
         }
         Text("Start a session, or look back at the week.", color = MaterialTheme.colorScheme.secondary)
-        if (model.clock != null || model.timer != null) {
-            PrimaryButton(if (model.clock != null) "Resume HIIT" else "Resume outing") { model.openWorkout() }
+        val active = model.activeCard(snap)
+        if (active != null) {
+            Panel {
+                Text("Active workout", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                Text(active.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
+                if (active.detail.isNotBlank()) {
+                    Text(active.detail, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 2.dp))
+                }
+                model.notice?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+                }
+                PrimaryButton("Open") { model.openWorkout() }
+            }
+        } else {
+            model.notice?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            }
         }
         SectionLabel("This week")
         Panel {
@@ -151,6 +170,17 @@ fun HomeScreen(model: AppModel) {
                 model.openNamedOuting("Run")
             }
             StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.openNamedOuting("Hike") }
+        }
+        if (snap.plans.isNotEmpty()) {
+            SectionLabel("Plans")
+            snap.plans.forEach { plan ->
+                val body = decodePlan(plan.body) ?: PlanBody()
+                WorkoutCard(
+                    plan.title.ifBlank { planTitle(plan.kind, body) },
+                    planDetail(body),
+                    icon = planIcon(plan.kind),
+                ) { model.startPlan(plan.id) }
+            }
         }
         val favourites = snap.workouts.filter { it.finished && it.favourite }.sortedByDescending { it.performedAt }
         if (favourites.isNotEmpty()) {
@@ -434,7 +464,20 @@ fun BuildScreen(model: AppModel) {
                 }
             }
         }
+        val canSavePlan = if (picking) build.picks.isNotEmpty() else build.parts.any { it.count > 0 }
+        if (canSavePlan) {
+            QuietButton("Save as Plan") { model.saveBuildAsPlan() }
+            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE") {
+                Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
+            }
+        }
     }
+}
+
+private fun planIcon(kind: String): ImageVector = when (kind) {
+    "HIIT" -> Icons.Filled.Timer
+    "BODYWEIGHT" -> Icons.Filled.AccessibilityNew
+    else -> Icons.Filled.FitnessCenter
 }
 
 @Composable

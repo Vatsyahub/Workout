@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -176,6 +177,12 @@ fun StrengthScreen(model: AppModel) {
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (!handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
+        if (!draft.logging && draft.lines.isNotEmpty()) {
+            QuietButton("Save as Plan") { model.saveStrengthAsPlan() }
+            if (model.planNote == "LINES") {
+                Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
+            }
+        }
     }
 }
 
@@ -184,6 +191,9 @@ private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
     val snap by model.snap.collectAsState()
     val pagerState = rememberPagerState(initialPage = draft.focus.coerceIn(0, draft.lines.lastIndex)) {
         draft.lines.size
+    }
+    LaunchedEffect(pagerState.currentPage) {
+        model.rememberFocus(pagerState.currentPage)
     }
     HorizontalPager(
         state = pagerState,
@@ -460,6 +470,12 @@ fun HiitScreen(model: AppModel) {
         }
         QuietButton("Add set") { model.addHiitSet() }
         QuietButton("Reroll all") { model.rerollHiitAll() }
+        if (!draft.manual) {
+            QuietButton("Save as Plan") { model.saveHiitAsPlan() }
+            if (model.planNote == "HIIT") {
+                Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
+            }
+        }
     }
 }
 

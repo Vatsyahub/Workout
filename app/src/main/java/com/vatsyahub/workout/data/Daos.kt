@@ -243,6 +243,18 @@ interface WorkoutDao {
     @Query("DELETE FROM active_session")
     suspend fun clearActive()
 
+    @Query("SELECT * FROM plans ORDER BY savedAt DESC, id DESC")
+    suspend fun plans(): List<SavedPlan>
+
+    @Insert
+    suspend fun insertPlan(plan: SavedPlan): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlans(rows: List<SavedPlan>)
+
+    @Query("DELETE FROM plans")
+    suspend fun clearPlans()
+
     @Query("DELETE FROM splits")
     suspend fun clearSplits()
 

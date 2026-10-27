@@ -114,6 +114,15 @@ private fun AppFrame(model: AppModel) {
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             ScreenBody(model, screen)
+            if (screen != Screen.Home) {
+                model.notice?.let { message ->
+                    Text(
+                        message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    )
+                }
+            }
         }
     }
 }

@@ -32,6 +32,7 @@ data class Snapshot(
     val splits: List<Split> = emptyList(),
     val values: List<FieldValue> = emptyList(),
     val active: ActiveSession? = null,
+    val plans: List<SavedPlan> = emptyList(),
 )
 
 fun Snapshot.exercise(id: Long?): Exercise? = exercises.find { it.id == id }
