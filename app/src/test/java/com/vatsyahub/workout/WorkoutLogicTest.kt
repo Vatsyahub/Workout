@@ -10,6 +10,9 @@ import com.vatsyahub.workout.domain.catchUp
 import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.coveredMetres
 import com.vatsyahub.workout.domain.dragSteps
+import com.vatsyahub.workout.domain.dropIndex
+import com.vatsyahub.workout.domain.orderNumber
+import com.vatsyahub.workout.domain.shiftForDrag
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.SetLoad
@@ -404,6 +407,17 @@ class WorkoutLogicTest {
         assertEquals(same, moveItem(same, 0, 0))
         assertEquals(same, moveItem(same, -1, 0))
         assertEquals(same, moveItem(same, 0, 4))
+        val spans = listOf(200f, 200f, 200f, 200f)
+        assertEquals(1, dropIndex(0, 4, 250f, spans))
+        assertEquals(2, dropIndex(0, 4, 350f, spans))
+        assertEquals(0, dropIndex(0, 4, -40f, spans))
+        assertEquals(1, dropIndex(2, 4, -150f, spans))
+        assertEquals(-200f, shiftForDrag(1, 0, 2, 200f), 0.01f)
+        assertEquals(0f, shiftForDrag(3, 0, 2, 200f), 0.01f)
+        assertEquals(200f, shiftForDrag(1, 2, 0, 200f), 0.01f)
+        assertEquals(3, orderNumber(0, 0, 2))
+        assertEquals(1, orderNumber(1, 0, 2))
+        assertEquals(2, orderNumber(2, 0, 2))
     }
 
     @Test

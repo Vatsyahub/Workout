@@ -157,7 +157,14 @@ fun LogsScreen(model: AppModel) {
                 SectionLabel("This week")
                 if (week.isEmpty()) {
                     Panel {
-                        Text("Nothing logged this week.")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconBadge(Icons.Filled.History)
+                            Text(
+                                "Nothing logged this week.",
+                                modifier = Modifier.padding(start = 12.dp),
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
                     }
                 }
             }
@@ -277,17 +284,10 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconBadge(Icons.Filled.FitnessCenter)
                     Column(Modifier.padding(start = 12.dp)) {
-                        Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
                         Text(snap.blockName(block), style = MaterialTheme.typography.titleLarge)
+                        Text(part, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
-                Text(
-                    "Body part",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-                Text(part, color = MaterialTheme.colorScheme.secondary)
                 val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
                 CompactSets(
                     formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),

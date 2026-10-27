@@ -2,6 +2,7 @@ package com.vatsyahub.workout.ui
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -37,6 +38,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -48,15 +53,21 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.vatsyahub.workout.domain.dragSteps
+import com.vatsyahub.workout.domain.dropIndex
+import com.vatsyahub.workout.domain.orderNumber
+import com.vatsyahub.workout.domain.shiftForDrag
 import java.time.LocalDate
 
 @Composable
@@ -206,27 +217,19 @@ fun OrderBadge(number: Int) {
 }
 
 @Composable
-fun DragGrip(
-    onStart: () -> Unit,
-    onStep: (Int) -> Boolean,
-    onOffset: (Float) -> Unit,
-    onEnd: () -> Unit,
-    span: () -> Float,
-) {
+fun DragGrip(onStart: () -> Unit, onDrag: (Float) -> Unit, onEnd: () -> Unit) {
     val start = rememberUpdatedState(onStart)
-    val step = rememberUpdatedState(onStep)
-    val offset = rememberUpdatedState(onOffset)
+    val drag = rememberUpdatedState(onDrag)
     val end = rememberUpdatedState(onEnd)
-    val spanState = rememberUpdatedState(span)
     Box(
         Modifier
             .size(48.dp)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var total = 0f
                     start.value()
                     down.consume()
-                    var moved = 0f
                     try {
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -234,27 +237,10 @@ fun DragGrip(
                             if (!change.pressed) break
                             val delta = change.position - change.previousPosition
                             change.consume()
-                            if (delta.y == 0f) continue
-                            moved += delta.y
-                            val item = spanState.value().coerceAtLeast(48f)
-                            var guard = 0
-                            while (guard++ < 24) {
-                                val shift = dragSteps(moved, item)
-                                if (shift.steps == 0) {
-                                    moved = shift.offset
-                                    break
-                                }
-                                val dir = if (shift.steps > 0) 1 else -1
-                                if (!step.value(dir)) {
-                                    moved = moved.coerceIn(-item / 2f, item / 2f)
-                                    break
-                                }
-                                moved -= dir * item
-                            }
-                            offset.value(moved)
+                            total += delta.y
+                            drag.value(total)
                         }
                     } finally {
-                        offset.value(0f)
                         end.value()
                     }
                 }
@@ -262,6 +248,79 @@ fun DragGrip(
         contentAlignment = Alignment.Center,
     ) {
         Icon(Icons.Filled.DragIndicator, contentDescription = "Reorder", tint = MaterialTheme.colorScheme.secondary)
+    }
+}
+
+@Composable
+fun <T> ReorderColumn(
+    items: List<T>,
+    keyOf: (T) -> Any,
+    onMove: (Int, Int) -> Unit,
+    row: @Composable (index: Int, item: T, number: Int, moving: Boolean, handle: @Composable () -> Unit) -> Unit,
+) {
+    var from by remember { mutableIntStateOf(-1) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+    val session = remember { floatArrayOf(-1f, 0f) }
+    val heights = remember { mutableStateMapOf<Any, Int>() }
+    val spans = items.map { heights[keyOf(it)]?.toFloat() ?: 0f }
+    val target = if (from in items.indices) dropIndex(from, items.size, dragY, spans) else -1
+    val draggedSpan = spans.getOrElse(from) { 0f }
+    val elevation = with(LocalDensity.current) { 10.dp.toPx() }
+    items.forEachIndexed { index, item ->
+        key(keyOf(item)) {
+            val moving = index == from
+            val shift = if (from >= 0) shiftForDrag(index, from, target, draggedSpan) else 0f
+            val number = if (from >= 0) orderNumber(index, from, target) else index + 1
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .zIndex(if (moving) 1f else 0f)
+                    .onSizeChanged { heights[keyOf(item)] = it.height }
+                    .graphicsLayer {
+                        translationY = if (moving) dragY else shift
+                        shadowElevation = if (moving) elevation else 0f
+                        shape = RoundedCornerShape(16.dp)
+                        scaleX = if (moving) 1.02f else 1f
+                        scaleY = if (moving) 1.02f else 1f
+                    }
+                    .then(
+                        if (moving) {
+                            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                row(index, item, number, moving) {
+                    DragGrip(
+                        onStart = {
+                            session[0] = index.toFloat()
+                            session[1] = 0f
+                            from = index
+                            dragY = 0f
+                        },
+                        onDrag = {
+                            session[1] = it
+                            dragY = it
+                        },
+                        onEnd = {
+                            val origin = session[0].toInt()
+                            val landing = if (origin in items.indices) {
+                                val measured = items.map { heights[keyOf(it)]?.toFloat() ?: 0f }
+                                dropIndex(origin, items.size, session[1], measured)
+                            } else {
+                                origin
+                            }
+                            session[0] = -1f
+                            session[1] = 0f
+                            from = -1
+                            dragY = 0f
+                            if (origin >= 0) onMove(origin, landing)
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

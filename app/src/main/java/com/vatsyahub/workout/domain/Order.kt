@@ -31,3 +31,28 @@ fun dragSteps(offset: Float, itemSpan: Float): DragSteps {
     }
     return DragSteps(steps, y)
 }
+
+fun dropIndex(from: Int, count: Int, offsetY: Float, spans: List<Float>): Int {
+    if (count <= 0) return 0
+    val start = from.coerceIn(0, count - 1)
+    val span = spans.getOrElse(start) { 0f }.takeIf { it > 1f } ?: 160f
+    return (start + dragSteps(offsetY, span).steps).coerceIn(0, count - 1)
+}
+
+fun shiftForDrag(index: Int, from: Int, target: Int, draggedSpan: Float): Float {
+    if (from < 0 || index == from || draggedSpan <= 0f || target == from) return 0f
+    if (target > from && index in (from + 1)..target) return -draggedSpan
+    if (target < from && index in target until from) return draggedSpan
+    return 0f
+}
+
+fun orderNumber(index: Int, from: Int, target: Int): Int {
+    val place = when {
+        from < 0 || target < 0 || from == target -> index
+        index == from -> target
+        target > from && index in (from + 1)..target -> index - 1
+        target < from && index in target until from -> index + 1
+        else -> index
+    }
+    return place + 1
+}

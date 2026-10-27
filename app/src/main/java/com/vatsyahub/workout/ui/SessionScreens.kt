@@ -130,80 +130,47 @@ fun StrengthScreen(model: AppModel) {
                 Text("Add the exercises in this session.")
             }
         }
-        draft.lines.forEachIndexed { lineIndex, line ->
+        ReorderColumn(
+            items = draft.lines,
+            keyOf = { it.key },
+            onMove = { from, to -> model.moveDraft(from, to) },
+        ) { lineIndex, line, number, _, handle ->
             val exercise = snap.exercises.find { it.id == line.exerciseId }
             val showWeight = showsWeight(draft.kind, exercise?.usage)
-            key(line.key) {
-                var height by remember(line.key) { mutableIntStateOf(1) }
-                var lift by remember(line.key) { mutableFloatStateOf(0f) }
-                var dragging by remember(line.key) { mutableStateOf(false) }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .zIndex(if (dragging) 1f else 0f)
-                        .onSizeChanged { height = it.height }
-                        .graphicsLayer { translationY = lift },
-                ) {
-                    Panel {
-                        Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OrderBadge(lineIndex + 1)
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp)
-                                    .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
-                            ) {
-                                Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
-                                Text(
-                                    "Body part",
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                                Text(
-                                    exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
-                                    color = MaterialTheme.colorScheme.secondary,
-                                )
-                                if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
-                                    Text(
-                                        "Workout type",
-                                        color = MaterialTheme.colorScheme.secondary,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        modifier = Modifier.padding(top = 6.dp),
-                                    )
-                                    Text(line.group, color = MaterialTheme.colorScheme.secondary)
-                                }
-                            }
-                            DragGrip(
-                                onStart = {
-                                    dragging = true
-                                    model.beginDraftDrag(lineIndex)
-                                },
-                                onStep = { model.dragDraft(it) },
-                                onOffset = { lift = it },
-                                onEnd = {
-                                    dragging = false
-                                    model.endDraftDrag()
-                                },
-                                span = { height.toFloat() },
-                            )
-                            if (line.groupKind != "PICK") {
-                                IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
-                                    Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
-                                }
-                            }
-                            IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                            }
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OrderBadge(number)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp)
+                            .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
+                    ) {
+                        Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                            Text(line.group, color = MaterialTheme.colorScheme.secondary)
                         }
-                        CompactSets(
-                            formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
-                            showWeight,
-                            line.sets,
-                        ) { model.replaceDraftSets(lineIndex, it) }
+                    }
+                    handle()
+                    if (line.groupKind != "PICK") {
+                        IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                        }
+                    }
+                    IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
+                CompactSets(
+                    formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                    showWeight,
+                    line.sets,
+                ) { model.replaceDraftSets(lineIndex, it) }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
@@ -231,66 +198,46 @@ private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
         ) {
-            Text(
-                "${page + 1}",
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Text(
-                "of ${draft.lines.size}",
-                color = MaterialTheme.colorScheme.secondary,
-            )
             Panel {
-                Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    "Body part",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text(exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None")
-                if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
-                    Text(
-                        "Workout type",
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Text(line.group)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OrderBadge(page + 1)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                            Text(line.group, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+                    IconBadge(Icons.Filled.FitnessCenter)
                 }
-            }
-            line.sets.forEachIndexed { setIndex, set ->
-                Panel {
-                    Text("Set ${setIndex + 1}", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "${page + 1} of ${draft.lines.size}",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                line.sets.forEachIndexed { setIndex, set ->
                     Text(
-                        "${set.reps} reps",
+                        "Set ${setIndex + 1}",
                         style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier.padding(top = 12.dp),
                     )
+                    Text("${set.reps} reps", style = MaterialTheme.typography.titleLarge)
                     if (showWeight) {
                         Text(
                             set.weightKg?.let { "${trimNumber(it)} kg" } ?: "No weight",
                             color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.padding(top = 2.dp),
                         )
                     }
                 }
-            }
-            CompactSets(
-                formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
-                showWeight,
-                line.sets,
-            ) { model.replaceDraftSets(page, it) }
-            if (draft.lines.size > 1) {
-                Text(
-                    when (page) {
-                        0 -> "Swipe left for the next exercise."
-                        draft.lines.lastIndex -> "Swipe right for the previous exercise."
-                        else -> "Swipe left for the next exercise, or right for the previous."
-                    },
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                CompactSets(
+                    formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                    showWeight,
+                    line.sets,
+                ) { model.replaceDraftSets(page, it) }
             }
         }
     }
@@ -437,7 +384,10 @@ fun HiitScreen(model: AppModel) {
     val roundCount = if (shared) roundsOf(draft.template).toString() else "Mixed"
     ActionPage(action, { if (draft.manual) model.saveManualHiit() else model.startClock() }) {
         Panel {
-            Text("HIIT", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconBadge(Icons.Filled.Timer)
+                Text("HIIT", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 12.dp))
+            }
             StatTile("Date", dayText(draft.day), Modifier.fillMaxWidth(), chooseDate)
             StatTile("Order", patternName, Modifier.fillMaxWidth()) { model.openPatterns(null) }
             StatTile("Times around", roundCount, Modifier.fillMaxWidth())
@@ -452,13 +402,16 @@ fun HiitScreen(model: AppModel) {
         }
         draft.sets.forEachIndexed { setIndex, set ->
             Panel {
-                Column(Modifier.fillMaxWidth().clickable { model.open(Screen.SetMenu(setIndex)) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { model.open(Screen.SetMenu(setIndex)) }) {
+                    IconBadge(Icons.Filled.Timer)
+                    Column(Modifier.padding(start = 12.dp)) {
                     Text("Set ${setIndex + 1}", style = MaterialTheme.typography.titleLarge)
                     Text(
                         patternLabel(set.passes),
                         color = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier.padding(top = 2.dp),
                     )
+                    }
                 }
                 Text(
                     "Exercises",
@@ -788,9 +741,17 @@ fun OutingTimerScreen(model: AppModel) {
             .padding(horizontal = 24.dp),
     ) {
         Column(Modifier.align(Alignment.Center).fillMaxWidth()) {
-            Panel {
+                Panel {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(name.ifBlank { "Outing" }, style = MaterialTheme.typography.titleLarge)
+                    IconBadge(
+                        when (name) {
+                            "Swim" -> Icons.Filled.Pool
+                            "Run" -> Icons.AutoMirrored.Filled.DirectionsRun
+                            "Hike" -> Icons.Filled.Terrain
+                            else -> Icons.Filled.Timer
+                        },
+                    )
+                    Text(name.ifBlank { "Outing" }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
                     Text(
                         if (timer.running) "Clock running" else "Paused",
                         color = MaterialTheme.colorScheme.secondary,

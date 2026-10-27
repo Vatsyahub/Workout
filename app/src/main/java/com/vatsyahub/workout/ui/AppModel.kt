@@ -367,6 +367,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         pickDrag = null
     }
 
+    fun movePicked(from: Int, to: Int) {
+        build = build.copy(picks = moveItem(build.picks, from, to))
+        pickDrag = null
+    }
+
     fun setPickReps(line: Int, set: Int, reps: Int) {
         editPick(line, set) { it.copy(reps = reps.coerceAtLeast(0)) }
     }
@@ -458,6 +463,19 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun endDraftDrag() {
+        draftDrag = null
+    }
+
+    fun moveDraft(from: Int, to: Int) {
+        val draft = strength ?: return
+        val lines = moveItem(draft.lines, from, to)
+        if (lines === draft.lines) return
+        val focus = when (draft.focus) {
+            from -> to
+            in minOf(from, to)..maxOf(from, to) -> draft.focus + if (from < to) -1 else 1
+            else -> draft.focus
+        }
+        strength = draft.copy(lines = lines, focus = focus.coerceIn(0, lines.lastIndex))
         draftDrag = null
     }
 

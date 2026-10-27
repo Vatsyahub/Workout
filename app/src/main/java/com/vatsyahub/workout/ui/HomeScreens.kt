@@ -164,7 +164,16 @@ fun HomeScreen(model: AppModel) {
         }
         SectionLabel("Recent")
         if (recent.isEmpty()) {
-            Text("Finished sessions show up here.", color = MaterialTheme.colorScheme.secondary)
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.History)
+                    Text(
+                        "Finished sessions show up here.",
+                        modifier = Modifier.padding(start = 12.dp),
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
         } else {
             recent.forEach { workout ->
                 val summary = snap.summary(workout)
@@ -334,22 +343,22 @@ fun BuildScreen(model: AppModel) {
                     Text("Add at least one exercise", style = MaterialTheme.typography.titleMedium)
                 }
             }
-            build.picks.forEachIndexed { index, line ->
+            ReorderColumn(
+                items = build.picks,
+                keyOf = { it.key },
+                onMove = { from, to -> model.movePicked(from, to) },
+            ) { index, line, number, _, handle ->
                 val exercise = snap.exercises.find { it.id == line.exerciseId }
-                key(line.key) {
-                    PickedExerciseCard(
-                        number = index + 1,
-                        line = line,
-                        exercise = exercise,
-                        showWeight = showsWeight(pickedKind, exercise?.usage),
-                        onName = { model.openPicker(Picker.PickSwap(index)) },
-                        onRemove = { model.removePicked(index) },
-                        onDragStart = { model.beginPickDrag(index) },
-                        onDragStep = { model.dragPicked(it) },
-                        onDragEnd = { model.endPickDrag() },
-                        onSave = { model.replacePickedSets(index, it) },
-                    )
-                }
+                PickedExerciseCard(
+                    number = number,
+                    line = line,
+                    exercise = exercise,
+                    showWeight = showsWeight(pickedKind, exercise?.usage),
+                    onName = { model.openPicker(Picker.PickSwap(index)) },
+                    onRemove = { model.removePicked(index) },
+                    onSave = { model.replacePickedSets(index, it) },
+                    handle = handle,
+                )
             }
         } else if (pool.isEmpty()) {
             Panel {
@@ -379,11 +388,13 @@ fun BuildScreen(model: AppModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconBadge(if (byType) Icons.Filled.Timer else Icons.Filled.AccessibilityNew)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(
-                                if (byType) "Workout type" else "Body part",
-                                color = MaterialTheme.colorScheme.secondary,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
+                            if (byType) {
+                                Text(
+                                    "Workout type",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
                             Text(part.bodyPart, style = MaterialTheme.typography.titleLarge)
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -430,53 +441,23 @@ private fun PickedExerciseCard(
     showWeight: Boolean,
     onName: () -> Unit,
     onRemove: () -> Unit,
-    onDragStart: () -> Unit,
-    onDragStep: (Int) -> Boolean,
-    onDragEnd: () -> Unit,
     onSave: (List<DraftSet>) -> Unit,
+    handle: @Composable () -> Unit,
 ) {
     var editing by remember(line.key) { mutableStateOf(false) }
     var draft by remember(line.key) { mutableStateOf(line.sets) }
-    var height by remember(line.key) { mutableIntStateOf(1) }
-    var lift by remember(line.key) { mutableFloatStateOf(0f) }
-    var dragging by remember(line.key) { mutableStateOf(false) }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .zIndex(if (dragging) 1f else 0f)
-            .onSizeChanged { height = it.height }
-            .graphicsLayer { translationY = lift },
-    ) {
     Panel {
-        Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
             OrderBadge(number)
             Column(Modifier.weight(1f).padding(start = 12.dp).clickable(onClick = onName)) {
                 Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Body part",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-                Text(
                     exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
                     color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            DragGrip(
-                onStart = {
-                    dragging = true
-                    onDragStart()
-                },
-                onStep = onDragStep,
-                onOffset = { lift = it },
-                onEnd = {
-                    dragging = false
-                    onDragEnd()
-                },
-                span = { height.toFloat() },
-            )
+            handle()
             IconButton(onClick = onRemove) {
                 Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
             }
@@ -512,7 +493,6 @@ private fun PickedExerciseCard(
                 editing = false
             }
         }
-    }
     }
 }
 
