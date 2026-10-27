@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -100,11 +101,12 @@ fun HomeScreen(model: AppModel) {
     Page {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
             ProfilePhoto(snap.profile.avatar, 52.dp) { model.tab(Screen.Settings) }
-            Text(
-                if (name.isBlank()) "Workout" else name,
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.padding(start = 14.dp),
-            )
+            Column(Modifier.padding(start = 14.dp)) {
+                Text("Barbook", style = MaterialTheme.typography.headlineLarge)
+                if (name.isNotBlank()) {
+                    Text(name, color = MaterialTheme.colorScheme.secondary)
+                }
+            }
         }
         Text("Start a session, or look back at the week.", color = MaterialTheme.colorScheme.secondary)
         if (model.clock != null || model.timer != null) {
@@ -266,7 +268,7 @@ fun BuildScreen(model: AppModel) {
         build.kind,
     )
     ActionPage(
-        if (picking) "Open workout" else "Build",
+        if (picking) "Save and start workout" else "Build",
         {
             if (picking) {
                 if (build.picks.isEmpty()) return@ActionPage
@@ -329,14 +331,20 @@ fun BuildScreen(model: AppModel) {
             }
             build.picks.forEachIndexed { index, line ->
                 val exercise = snap.exercises.find { it.id == line.exerciseId }
-                PickedExerciseCard(
-                    line = line,
-                    exercise = exercise,
-                    showWeight = showsWeight(pickedKind, exercise?.usage),
-                    onName = { model.openPicker(Picker.PickSwap(index)) },
-                    onRemove = { model.removePicked(index) },
-                    onSave = { model.replacePickedSets(index, it) },
-                )
+                key(line.key) {
+                    PickedExerciseCard(
+                        number = index + 1,
+                        line = line,
+                        exercise = exercise,
+                        showWeight = showsWeight(pickedKind, exercise?.usage),
+                        onName = { model.openPicker(Picker.PickSwap(index)) },
+                        onRemove = { model.removePicked(index) },
+                        onDragStart = { model.beginPickDrag(index) },
+                        onDragStep = { model.dragPicked(it) },
+                        onDragEnd = { model.endPickDrag() },
+                        onSave = { model.replacePickedSets(index, it) },
+                    )
+                }
             }
         } else if (pool.isEmpty()) {
             Panel {
@@ -411,19 +419,23 @@ fun BuildScreen(model: AppModel) {
 
 @Composable
 private fun PickedExerciseCard(
+    number: Int,
     line: StrengthLine,
     exercise: Exercise?,
     showWeight: Boolean,
     onName: () -> Unit,
     onRemove: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragStep: (Int) -> Unit,
+    onDragEnd: () -> Unit,
     onSave: (List<DraftSet>) -> Unit,
 ) {
-    var editing by remember(line.exerciseId) { mutableStateOf(false) }
-    var draft by remember(line.exerciseId) { mutableStateOf(line.sets) }
+    var editing by remember(line.key) { mutableStateOf(false) }
+    var draft by remember(line.key) { mutableStateOf(line.sets) }
     Panel {
         Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Filled.FitnessCenter)
+            OrderBadge(number)
             Column(Modifier.weight(1f).padding(start = 12.dp).clickable(onClick = onName)) {
                 Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                 Text(
@@ -437,6 +449,7 @@ private fun PickedExerciseCard(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
+            DragGrip(onDragStart, onDragStep, onDragEnd)
             IconButton(onClick = onRemove) {
                 Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
             }
@@ -668,6 +681,15 @@ fun SettingsScreen(model: AppModel) {
                         Text(facts, color = MaterialTheme.colorScheme.secondary)
                     }
                 }
+            }
+        }
+        SectionLabel("Appearance")
+        Row {
+            ChoiceChip("Light", profile.appearance != "DARK") {
+                model.saveProfile(profile.copy(appearance = "LIGHT"))
+            }
+            ChoiceChip("Dark", profile.appearance == "DARK") {
+                model.saveProfile(profile.copy(appearance = "DARK"))
             }
         }
         Door(Icons.Filled.Person, "Edit profile", "Name, age, weight, height, and photo") { model.open(Screen.Profile) }

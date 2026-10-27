@@ -3,6 +3,7 @@ package com.vatsyahub.workout.ui
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -25,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Icon
@@ -35,7 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +49,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -178,6 +184,67 @@ fun IconBadge(icon: ImageVector, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+fun OrderBadge(number: Int) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            number.toString(),
+            color = MaterialTheme.colorScheme.onPrimary,
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+fun DragGrip(onStart: () -> Unit, onStep: (Int) -> Unit, onEnd: () -> Unit) {
+    val start by rememberUpdatedState(onStart)
+    val step by rememberUpdatedState(onStep)
+    val end by rememberUpdatedState(onEnd)
+    val threshold = with(LocalDensity.current) { 56.dp.toPx() }
+    var moved by remember { mutableFloatStateOf(0f) }
+    Box(
+        Modifier
+            .size(44.dp)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = {
+                        moved = 0f
+                        start()
+                    },
+                    onDragEnd = {
+                        moved = 0f
+                        end()
+                    },
+                    onDragCancel = {
+                        moved = 0f
+                        end()
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        moved += amount.y
+                        while (moved >= threshold) {
+                            moved -= threshold
+                            step(1)
+                        }
+                        while (moved <= -threshold) {
+                            moved += threshold
+                            step(-1)
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Filled.DragIndicator, contentDescription = "Reorder", tint = MaterialTheme.colorScheme.secondary)
     }
 }
 

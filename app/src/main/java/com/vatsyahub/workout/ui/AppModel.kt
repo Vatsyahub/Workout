@@ -159,6 +159,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     private var timerAccumulated = 0L
     private var timerResumedWall = 0L
     private var timerJob: kotlinx.coroutines.Job? = null
+    private var pickDrag: Int? = null
+    private var draftDrag: Int? = null
 
     init {
         viewModelScope.launch {
@@ -177,6 +179,15 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun back() {
+        val draft = strength
+        if (stack.lastOrNull() == Screen.Strength && draft != null && draft.started && !draft.logging) {
+            val under = stack.getOrNull(stack.lastIndex - 1)
+            val fromPick = under == Screen.Build && build.mode == "PICK"
+            if (!fromPick) {
+                strength = draft.copy(started = false)
+                return
+            }
+        }
         if (stack.size > 1) stack.removeAt(stack.lastIndex)
     }
 
@@ -252,7 +263,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun beginEmptyStrength(kind: String) {
         if (busy()) return
-        strength = StrengthDraft(kind, LocalDate.now(), null, emptyList())
+        strength = StrengthDraft(kind, LocalDate.now(), null, emptyList(), logging = true)
         open(Screen.Strength)
     }
 
@@ -331,6 +342,26 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun removePicked(index: Int) {
         build = build.copy(picks = build.picks.filterIndexed { i, _ -> i != index })
+        pickDrag = null
+    }
+
+    fun beginPickDrag(index: Int) {
+        if (index in build.picks.indices) pickDrag = index
+    }
+
+    fun dragPicked(step: Int) {
+        val from = pickDrag ?: return
+        if (step == 0) return
+        val to = (from + step).coerceIn(0, build.picks.lastIndex)
+        if (to == from) return
+        val picks = build.picks.toMutableList()
+        picks.add(to, picks.removeAt(from))
+        build = build.copy(picks = picks)
+        pickDrag = to
+    }
+
+    fun endPickDrag() {
+        pickDrag = null
     }
 
     fun setPickReps(line: Int, set: Int, reps: Int) {
@@ -380,8 +411,48 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             null,
             build.picks.map { line -> line.copy(sets = line.sets.map { it.copy() }, groupKind = "PICK") },
         )
-        strength = withKind(draft)
+        strength = withKind(draft.copy(started = true, focus = 0))
         open(Screen.Strength)
+    }
+
+    fun startFocusedWorkout() {
+        val draft = strength ?: return
+        if (draft.lines.isEmpty() || draft.logging) return
+        strength = draft.copy(started = true, focus = 0)
+    }
+
+    fun stepStrength(delta: Int) {
+        val draft = strength ?: return
+        if (draft.lines.isEmpty()) return
+        val next = draft.focus + delta
+        if (next !in draft.lines.indices) return
+        strength = draft.copy(focus = next)
+    }
+
+    fun beginDraftDrag(index: Int) {
+        val draft = strength ?: return
+        if (index in draft.lines.indices) draftDrag = index
+    }
+
+    fun dragDraft(step: Int) {
+        val from = draftDrag ?: return
+        val draft = strength ?: return
+        if (step == 0 || draft.lines.isEmpty()) return
+        val to = (from + step).coerceIn(0, draft.lines.lastIndex)
+        if (to == from) return
+        val lines = draft.lines.toMutableList()
+        lines.add(to, lines.removeAt(from))
+        val focus = when (draft.focus) {
+            from -> to
+            in minOf(from, to)..maxOf(from, to) -> draft.focus + if (from < to) -1 else 1
+            else -> draft.focus
+        }
+        strength = draft.copy(lines = lines, focus = focus.coerceIn(0, lines.lastIndex))
+        draftDrag = to
+    }
+
+    fun endDraftDrag() {
+        draftDrag = null
     }
 
     fun setDraftDay(day: LocalDate) {
@@ -437,7 +508,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun removeDraftLine(line: Int) {
         val draft = strength ?: return
-        strength = withKind(draft.copy(lines = draft.lines.filterIndexed { index, _ -> index != line }))
+        val lines = draft.lines.filterIndexed { index, _ -> index != line }
+        val focus = when {
+            lines.isEmpty() -> 0
+            draft.focus > line -> draft.focus - 1
+            draft.focus == line -> draft.focus.coerceAtMost(lines.lastIndex)
+            else -> draft.focus
+        }
+        strength = withKind(
+            draft.copy(
+                lines = lines,
+                focus = focus,
+                started = draft.started && lines.isNotEmpty(),
+            ),
+        )
+        draftDrag = null
         if (stack.lastOrNull() == Screen.Picker) back()
     }
 

@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FieldValue::class,
         ActiveSession::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class WorkoutDatabase : RoomDatabase() {
@@ -45,14 +45,22 @@ abstract class WorkoutDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE profile ADD COLUMN appearance TEXT NOT NULL DEFAULT 'LIGHT'",
+                )
+            }
+        }
+
         fun create(context: Context): WorkoutDatabase =
             Room.databaseBuilder(context, WorkoutDatabase::class.java, "workout.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         db.execSQL(
-                            "INSERT INTO profile (id, name, age, weightKg, heightCm, avatar) " +
-                                "VALUES (1, '', NULL, NULL, NULL, NULL)",
+                            "INSERT INTO profile (id, name, age, weightKg, heightCm, avatar, appearance) " +
+                                "VALUES (1, '', NULL, NULL, NULL, NULL, 'LIGHT')",
                         )
                     }
                 })

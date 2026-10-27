@@ -15,6 +15,7 @@ data class Profile(
     val weightKg: Double? = null,
     val heightCm: Double? = null,
     val avatar: String? = null,
+    @ColumnInfo(defaultValue = "'LIGHT'") val appearance: String = "LIGHT",
 )
 
 @Serializable

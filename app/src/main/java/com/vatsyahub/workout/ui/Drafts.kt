@@ -4,6 +4,11 @@ import com.vatsyahub.workout.domain.DefaultPasses
 import com.vatsyahub.workout.domain.Pass
 import com.vatsyahub.workout.domain.expand
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicLong
+
+private val lineKeys = AtomicLong(1)
+
+fun lineKey(): Long = lineKeys.getAndIncrement()
 
 data class DraftSet(val reps: Int, val weightKg: Double?)
 
@@ -12,6 +17,7 @@ data class StrengthLine(
     val sets: List<DraftSet>,
     val group: String = "",
     val groupKind: String = "PART",
+    val key: Long = lineKey(),
 )
 
 data class StrengthDraft(
@@ -19,6 +25,9 @@ data class StrengthDraft(
     val day: LocalDate,
     val durationSec: Int?,
     val lines: List<StrengthLine>,
+    val started: Boolean = false,
+    val focus: Int = 0,
+    val logging: Boolean = false,
 )
 
 data class PartAsk(val bodyPart: String, val count: Int)

@@ -4,6 +4,10 @@ import android.app.Activity
 import android.view.WindowManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -86,11 +91,22 @@ import com.vatsyahub.workout.domain.swimPaceSeconds
 fun StrengthScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val draft = model.strength ?: return
+    if (draft.started && !draft.logging && draft.lines.isNotEmpty()) {
+        StrengthFocus(model, draft)
+        return
+    }
     val chooseDate = pickDate(draft.day) { model.setDraftDay(it) }
     val exerciseCount = draft.lines.size
     val totalReps = draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }
     val handPicked = draft.lines.isNotEmpty() && draft.lines.all { it.groupKind == "PICK" }
-    ActionPage("Mark as finished", { model.open(Screen.StrengthTime) }) {
+    val action = if (draft.logging) "Mark as finished" else "Save and start workout"
+    ActionPage(
+        action,
+        {
+            if (draft.logging) model.open(Screen.StrengthTime) else model.startFocusedWorkout()
+        },
+        showAction = draft.logging || draft.lines.isNotEmpty(),
+    ) {
         Panel {
             Text(strengthLabel(draft.kind), style = MaterialTheme.typography.titleLarge)
             Text(
@@ -112,55 +128,136 @@ fun StrengthScreen(model: AppModel) {
         draft.lines.forEachIndexed { lineIndex, line ->
             val exercise = snap.exercises.find { it.id == line.exerciseId }
             val showWeight = showsWeight(draft.kind, exercise?.usage)
-            Panel {
-                Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconBadge(Icons.Filled.FitnessCenter)
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(start = 12.dp)
-                            .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
-                    ) {
-                        Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "Body part",
-                            color = MaterialTheme.colorScheme.secondary,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(top = 6.dp),
-                        )
-                        Text(
-                            exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
-                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+            key(line.key) {
+                Panel {
+                    Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OrderBadge(lineIndex + 1)
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .padding(start = 12.dp)
+                                .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
+                        ) {
+                            Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                             Text(
-                                "Workout type",
+                                "Body part",
                                 color = MaterialTheme.colorScheme.secondary,
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(top = 6.dp),
                             )
-                            Text(line.group, color = MaterialTheme.colorScheme.secondary)
+                            Text(
+                                exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                            if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                                Text(
+                                    "Workout type",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                                Text(line.group, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
+                        DragGrip(
+                            { model.beginDraftDrag(lineIndex) },
+                            { model.dragDraft(it) },
+                            { model.endDraftDrag() },
+                        )
+                        if (line.groupKind != "PICK") {
+                            IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
+                                Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                            }
+                        }
+                        IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                         }
                     }
-                    if (line.groupKind != "PICK") {
-                        IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
-                        }
-                    }
-                    IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                    }
+                    CompactSets(
+                        formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                        showWeight,
+                        line.sets,
+                    ) { model.replaceDraftSets(lineIndex, it) }
                 }
-                CompactSets(
-                    formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
-                    showWeight,
-                    line.sets,
-                ) { model.replaceDraftSets(lineIndex, it) }
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (!handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
+    }
+}
+
+@Composable
+private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
+    val snap by model.snap.collectAsState()
+    val pagerState = rememberPagerState(initialPage = draft.focus.coerceIn(0, draft.lines.lastIndex)) {
+        draft.lines.size
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) { page ->
+        val line = draft.lines[page]
+        val exercise = snap.exercises.find { it.id == line.exerciseId }
+        val showWeight = showsWeight(draft.kind, exercise?.usage)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+        ) {
+            Text(
+                "${page + 1}",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                "of ${draft.lines.size}",
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Panel {
+                Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "Body part",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None")
+                if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                    Text(
+                        "Workout type",
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Text(line.group)
+                }
+            }
+            line.sets.forEachIndexed { setIndex, set ->
+                Panel {
+                    Text("Set ${setIndex + 1}", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "${set.reps} reps",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    if (showWeight) {
+                        Text(
+                            set.weightKg?.let { "${trimNumber(it)} kg" } ?: "No weight",
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+            }
+            CompactSets(
+                formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                showWeight,
+                line.sets,
+            ) { model.replaceDraftSets(page, it) }
+        }
     }
 }
 
