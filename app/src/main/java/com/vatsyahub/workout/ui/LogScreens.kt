@@ -377,10 +377,11 @@ private fun HiitLog(model: AppModel, workout: Workout) {
         }
         indexes.forEach { setIndex ->
             Panel {
+                Text("Set ${setIndex + 1}", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "Set ${setIndex + 1}",
+                    "Exercises in this set",
                     color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
                 val inSet = snap.blocks.filter { it.workoutId == workout.id && it.setIndex == setIndex }
                     .sortedBy { it.position }
@@ -391,14 +392,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
                     val exercise = snap.exercises.find { it.id == block.exerciseId }
                     val part = exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part"
                     var removing by remember(block.id) { mutableStateOf(false) }
-                    Text(
-                        "Exercise",
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Text(snap.blockName(block), style = MaterialTheme.typography.titleMedium)
-                    Text(part, color = MaterialTheme.colorScheme.secondary)
+                    InsetCard(snap.blockName(block), part, Icons.Filled.Timer)
                     if (removing) {
                         QuietButton("Remove exercise", MaterialTheme.colorScheme.error) {
                             model.removeHiitBlock(workout.id, block.id, block.exerciseId, setIndex)
@@ -457,7 +451,15 @@ private fun OutingLog(model: AppModel, workout: Workout) {
             fieldName = ""
             naming = false
         }) {
-            Field("Field", fieldName) { fieldName = it }
+            Panel {
+                Text("New field", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "A detail you want on later logs of this outing.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Field("Field", fieldName) { fieldName = it }
+            }
         }
         return
     }
@@ -518,6 +520,14 @@ fun WeeklyScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val lines = weeklyReport(LocalDate.now(), snap.weekWorkouts(), snap.marks())
     Page {
+        Panel {
+            Text("This week", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Compared with last week.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         if (lines.isEmpty()) {
             Panel { Text("Nothing to compare yet.") }
         }
@@ -534,11 +544,14 @@ fun ReportExercisesScreen(model: AppModel) {
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Text(
-                    "Tap an exercise to see its recent sessions.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-                )
+                Panel {
+                    Text("One exercise", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Tap an exercise to see its recent sessions.",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             if (snap.exercises.isEmpty()) {
                 item {
@@ -589,11 +602,14 @@ fun BestsScreen(model: AppModel) {
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Text(
-                    "Best efforts from the last three months.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-                )
+                Panel {
+                    Text("Bests", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Best efforts from the last three months.",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             if (lines.isEmpty()) {
                 item { Panel { Text("No bests in the last three months.") } }

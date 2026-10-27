@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -19,6 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Pool
@@ -58,7 +61,6 @@ import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.formatBreak
 import com.vatsyahub.workout.domain.formatDuration
 import com.vatsyahub.workout.domain.SetLoad
-import com.vatsyahub.workout.domain.formatKg
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.formatMetres
@@ -84,6 +86,11 @@ fun StrengthScreen(model: AppModel) {
     ActionPage("Mark as finished", { model.open(Screen.StrengthTime) }) {
         Panel {
             Text(strengthLabel(draft.kind), style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Tap a set line to change sets and reps.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 StatTile("Date", dayText(draft.day), Modifier.weight(1f), chooseDate)
                 StatTile("Exercises", exerciseCount.toString(), Modifier.weight(1f))
@@ -167,7 +174,15 @@ fun StrengthTimeScreen(model: AppModel) {
         model.setDraftDuration(time.trim().ifEmpty { null }?.let { parseDuration(it, true) })
         model.saveStrength()
     }) {
-        Field("Total time", time, number = true) { time = it }
+        Panel {
+            Text("Total time", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Leave this empty to save with no duration.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Field("Total time", time, number = true) { time = it }
+        }
     }
 }
 
@@ -180,12 +195,18 @@ internal fun CompactSets(
     var open by remember { mutableStateOf(false) }
     if (summary.isNotBlank()) {
         Text(
+            "Sets",
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        Text(
             summary,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { open = !open }
-                .padding(top = 8.dp, bottom = 2.dp),
+                .padding(top = 2.dp, bottom = 2.dp),
         )
     }
     if (open && summary.isNotBlank()) {
@@ -218,24 +239,14 @@ fun SetRow(
                 .clickable { removing = !removing }
                 .padding(vertical = 8.dp),
         )
-        Box(Modifier.weight(1f)) {
-            Editable(
-                reps.toString(),
-                reps.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                number = true,
-            ) { text ->
+        Box(Modifier.weight(1f).padding(end = 6.dp, top = 4.dp, bottom = 4.dp)) {
+            BoxField(reps.toString()) { text ->
                 text.toIntOrNull()?.let(onReps)
             }
         }
         if (heavy) {
-            Box(Modifier.weight(1.1f)) {
-                Editable(
-                    weight?.let { formatKg(it) } ?: "kg",
-                    weight?.let { trimNumber(it) }.orEmpty(),
-                    style = MaterialTheme.typography.titleMedium,
-                    number = true,
-                ) { text ->
+            Box(Modifier.weight(1.1f).padding(top = 4.dp, bottom = 4.dp)) {
+                BoxField(weight?.let { trimNumber(it) }.orEmpty(), placeholder = "kg") { text ->
                     onWeight(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
                 }
             }
@@ -284,12 +295,14 @@ fun HiitScreen(model: AppModel) {
         }
         draft.sets.forEachIndexed { setIndex, set ->
             Panel {
-                Text(
-                    "Set ${setIndex + 1}",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.clickable { model.open(Screen.SetMenu(setIndex)) },
-                )
+                Column(Modifier.fillMaxWidth().clickable { model.open(Screen.SetMenu(setIndex)) }) {
+                    Text("Set ${setIndex + 1}", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        patternLabel(set.passes),
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
                 Text(
                     "Exercises",
                     color = MaterialTheme.colorScheme.secondary,
@@ -309,10 +322,10 @@ fun HiitScreen(model: AppModel) {
                 }
                 set.exerciseIds.forEachIndexed { line, id ->
                     val exercise = snap.exercises.find { it.id == id }
-                    WorkoutCard(
+                    InsetCard(
                         exercise?.name ?: "Exercise",
                         exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "No body part",
-                        icon = Icons.Filled.Timer,
+                        Icons.Filled.Timer,
                     ) { model.openPicker(Picker.HiitSwap(setIndex, line)) }
                 }
                 if (draft.manual) {
@@ -346,7 +359,7 @@ fun PatternPickScreen(model: AppModel) {
         snap.patterns.sortedBy { it.label }.forEach { pattern ->
             WorkoutCard(pattern.label, "Use this pattern", icon = Icons.Filled.Timer) { model.applyPattern(pattern.id) }
         }
-        Door(Icons.Filled.Timer, "Edit patterns") { model.open(Screen.PatternEdit) }
+        Door(Icons.Filled.Timer, "Edit patterns", "Change passes and each-rounds") { model.open(Screen.PatternEdit) }
     }
 }
 
@@ -362,17 +375,26 @@ fun PatternEditScreen(model: AppModel) {
         model.back()
     }) {
         rows.forEachIndexed { index, row ->
-            Field(if (row.kind == EACH) "Each" else "Pass", row.times, number = true) { text ->
-                rows = rows.toMutableList().also { it[index] = row.copy(times = text) }
-            }
-            if (rows.size > 1) {
-                Word("Remove") {
-                    rows = rows.filterIndexed { rowIndex, _ -> rowIndex != index }
+            val each = row.kind == EACH
+            Panel {
+                Text(if (each) "Each" else "Pass", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (each) "Repeat each exercise this many times." else "A pass through every exercise.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Field(if (each) "Each" else "Pass", row.times, number = true) { text ->
+                    rows = rows.toMutableList().also { it[index] = row.copy(times = text) }
+                }
+                if (rows.size > 1) {
+                    QuietButton("Remove", MaterialTheme.colorScheme.error) {
+                        rows = rows.filterIndexed { rowIndex, _ -> rowIndex != index }
+                    }
                 }
             }
         }
-        Word("Pass") { rows = rows + PassRow(PASS, "1") }
-        Word("Each") { rows = rows + PassRow(EACH, "2") }
+        Door(Icons.Filled.Add, "Pass", "Add a pass through every exercise") { rows = rows + PassRow(PASS, "1") }
+        Door(Icons.Filled.Add, "Each", "Repeat each exercise on its own") { rows = rows + PassRow(EACH, "2") }
     }
 }
 
@@ -380,9 +402,9 @@ fun PatternEditScreen(model: AppModel) {
 fun SetMenuScreen(model: AppModel, index: Int) {
     val set = model.hiit?.sets?.getOrNull(index) ?: return
     Page {
-        Door(Icons.Filled.Timer, patternLabel(set.passes)) { model.openPatterns(index) }
+        Door(Icons.Filled.Timer, patternLabel(set.passes), "Change the pattern for this set") { model.openPatterns(index) }
         if ((model.hiit?.sets?.size ?: 0) > 1) {
-            Door(Icons.Filled.Delete, "Remove set") { model.removeHiitSet(index) }
+            Door(Icons.Filled.Delete, "Remove set", "Take this set out of the workout") { model.removeHiitSet(index) }
         }
     }
 }
@@ -397,30 +419,34 @@ fun PickerScreen(model: AppModel) {
                 val line = model.strength?.lines?.getOrNull(request.line)
                 val fromType = line?.groupKind == "TYPE" && line.group.isNotBlank()
                 val fromPick = line?.groupKind == "PICK"
-                Text(
-                    when {
-                        fromType -> "Exercises in ${line?.group}. Tap one to use it here."
-                        fromPick -> "Any exercise you have added. Tap one to use it here."
-                        else -> "Any exercise in this workout. Tap one to use it here."
-                    },
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-                )
+                Panel {
+                    Text("Replacement", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        when {
+                            fromType -> "Exercises in ${line?.group}. Tap one to use it here."
+                            fromPick -> "Any exercise you have added. Tap one to use it here."
+                            else -> "Any exercise in this workout. Tap one to use it here."
+                        },
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 model.lineChoices(request.line)
                     .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
                     .forEach { exercise ->
                         WorkoutCard(
                             exercise.name,
                             if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
+                            icon = Icons.Filled.FitnessCenter,
                         ) { model.pickExercise(exercise.id) }
                     }
             }
             is Picker.HiitSwap -> {
-                Door(Icons.Filled.Refresh, "Reroll") {
+                Door(Icons.Filled.Refresh, "Reroll", "Draw a different exercise") {
                     model.rerollHiit(request.set, request.line)
                     model.back()
                 }
-                Door(Icons.Filled.Delete, "Remove") { model.removeHiitLine(request.set, request.line) }
+                Door(Icons.Filled.Delete, "Remove", "Take this exercise out of the set") { model.removeHiitLine(request.set, request.line) }
                 snap.pool("HIIT").forEach { exercise ->
                     WorkoutCard(exercise.name, exercise.bodyPart.ifBlank { "No body part" }, icon = Icons.Filled.Timer) {
                         model.pickExercise(exercise.id)
@@ -446,17 +472,21 @@ fun PickerScreen(model: AppModel) {
                 }
             }
             is Picker.PickSwap -> {
-                Text(
-                    "Any exercise you have added. Tap one to use it here.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-                )
+                Panel {
+                    Text("Replacement", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Any exercise you have added. Tap one to use it here.",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 snap.strengthLibrary()
                     .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
                     .forEach { exercise ->
                         WorkoutCard(
                             exercise.name,
                             if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
+                            icon = Icons.Filled.FitnessCenter,
                         ) { model.pickExercise(exercise.id) }
                     }
             }
@@ -469,7 +499,9 @@ fun PickerScreen(model: AppModel) {
             }
             is Picker.BodyPart -> {
                 snap.pool(model.build.kind).map { it.bodyPart }.distinct().sortedBy { it.lowercase() }.forEach { part ->
-                    Word(part) { model.pickPart(part) }
+                    WorkoutCard(part, "Draw exercises from this body part", icon = Icons.Filled.AccessibilityNew) {
+                        model.pickPart(part)
+                    }
                 }
             }
             null -> Unit
@@ -488,16 +520,21 @@ fun ClockScreen(model: AppModel) {
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 24.dp),
     ) {
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(formatDuration(clock.remainingSec), style = MaterialTheme.typography.displayLarge)
-            Text(clock.now, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 18.dp))
-            if (clock.next.isNotBlank()) {
-                Text(
-                    clock.next,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+        Column(Modifier.align(Alignment.Center).fillMaxWidth()) {
+            Panel {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(clock.now.ifBlank { "HIIT" }, style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (clock.next.isBlank()) "Last interval" else "Next · ${clock.next}",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Text(
+                        formatDuration(clock.remainingSec),
+                        style = MaterialTheme.typography.displayLarge,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
         }
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 12.dp)) {
@@ -549,11 +586,22 @@ fun OutingTimerScreen(model: AppModel) {
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 24.dp),
     ) {
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (name.isNotBlank()) {
-                Text(name, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.secondary)
+        Column(Modifier.align(Alignment.Center).fillMaxWidth()) {
+            Panel {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(name.ifBlank { "Outing" }, style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        if (timer.running) "Clock running" else "Paused",
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Text(
+                        formatDuration(timer.elapsedSec),
+                        style = MaterialTheme.typography.displayLarge,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
-            Text(formatDuration(timer.elapsedSec), style = MaterialTheme.typography.displayLarge)
         }
         Column(
             Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp),
@@ -644,52 +692,66 @@ fun OutingFormScreen(model: AppModel) {
             )
             Text(kind.name, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp))
             Text(
-                dayText(model.outing?.day ?: draft.day),
+                when (kind.shape) {
+                    "SWIM" -> "Distance and time for this swim."
+                    "RUN" -> "Distance, time, and where you ran."
+                    "HIKE" -> "Distance, time, and the climb."
+                    else -> "What you want to remember from this outing."
+                },
                 color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .clickable { chooseDate() },
+                modifier = Modifier.padding(top = 4.dp),
             )
-        }
-        Field("Distance", distance, number = true) { distance = it }
-        Field("Time", time, number = true) { time = it }
-        val metres = distance.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) }
-        val seconds = time.trim().ifEmpty { null }?.let { parseDuration(it, true) }
-        if (metres != null && seconds != null) {
-            val pace = if (kind.shape == "SWIM") swimPaceSeconds(metres, seconds) else kmPaceSeconds(metres, seconds)
-            if (pace != null) Line(formatPace(pace) + if (kind.shape == "SWIM") " /100 m" else " /km")
-        }
-        if (kind.shape == "RUN") {
-            Field("Gradient", gradient, number = true) { gradient = it }
-        }
-        if (kind.shape == "HIKE") {
-            Field("Bottom", bottom, number = true) { bottom = it }
-            Field("Top", top, number = true) { top = it }
-            val low = bottom.trim().ifEmpty { null }?.let { parseDecimal(it) }
-            val high = top.trim().ifEmpty { null }?.let { parseDecimal(it) }
-            if (low != null && high != null) {
-                val climb = climbMetres(low, high)
-                Line("Climb ${formatMetres(climb)}")
-                if (bothWays) Line("Covered ${formatMetres(coveredMetres(climb, true))}")
+            StatTile("Date", dayText(model.outing?.day ?: draft.day), Modifier.fillMaxWidth(), chooseDate)
+            Field("Distance", distance, number = true) { distance = it }
+            Field("Time", time, number = true) { time = it }
+            val metres = distance.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) }
+            val seconds = time.trim().ifEmpty { null }?.let { parseDuration(it, true) }
+            if (metres != null && seconds != null) {
+                val pace = if (kind.shape == "SWIM") swimPaceSeconds(metres, seconds) else kmPaceSeconds(metres, seconds)
+                if (pace != null) {
+                    StatTile("Pace", formatPace(pace) + if (kind.shape == "SWIM") " /100 m" else " /km")
+                }
             }
-            Label("Way")
-            Word(if (bothWays) "Both ways" else "One way") { bothWays = !bothWays }
-        }
-        if (kind.shape == "RUN" || kind.shape == "HIKE") {
-            Field("Location", location) { location = it }
-        }
-        snap.fields.filter { it.kindId == kind.id }.forEach { field ->
-            Field(field.name, extras[field.id].orEmpty()) { text ->
-                extras = extras + (field.id to text)
+            if (kind.shape == "RUN") {
+                Field("Gradient", gradient, number = true) { gradient = it }
             }
-        }
-        if (kind.shape == "CUSTOM") {
-            Field("Field", fieldName) { fieldName = it }
-            Word("Add") {
-                val trimmed = fieldName.trim()
-                if (trimmed.isNotEmpty()) {
-                    model.addField(kind.id, trimmed)
-                    fieldName = ""
+            if (kind.shape == "HIKE") {
+                Field("Bottom", bottom, number = true) { bottom = it }
+                Field("Top", top, number = true) { top = it }
+                val low = bottom.trim().ifEmpty { null }?.let { parseDecimal(it) }
+                val high = top.trim().ifEmpty { null }?.let { parseDecimal(it) }
+                if (low != null && high != null) {
+                    val climb = climbMetres(low, high)
+                    StatTile("Climb", formatMetres(climb))
+                    if (bothWays) StatTile("Covered", formatMetres(coveredMetres(climb, true)))
+                }
+                Text(
+                    "Way",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                Row(Modifier.padding(top = 6.dp)) {
+                    ChoiceChip("One way", !bothWays) { bothWays = false }
+                    ChoiceChip("Both ways", bothWays) { bothWays = true }
+                }
+            }
+            if (kind.shape == "RUN" || kind.shape == "HIKE") {
+                Field("Location", location) { location = it }
+            }
+            snap.fields.filter { it.kindId == kind.id }.forEach { field ->
+                Field(field.name, extras[field.id].orEmpty()) { text ->
+                    extras = extras + (field.id to text)
+                }
+            }
+            if (kind.shape == "CUSTOM") {
+                Field("Field", fieldName) { fieldName = it }
+                SoftButton("Add") {
+                    val trimmed = fieldName.trim()
+                    if (trimmed.isNotEmpty()) {
+                        model.addField(kind.id, trimmed)
+                        fieldName = ""
+                    }
                 }
             }
         }
@@ -809,7 +871,16 @@ private fun LabeledEdit(
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
-        Editable(shown, raw, style = MaterialTheme.typography.titleLarge, number = number, onCommit = onCommit)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.background)
+                .padding(horizontal = 10.dp),
+        ) {
+            Editable(shown, raw, style = MaterialTheme.typography.titleLarge, number = number, onCommit = onCommit)
+        }
     }
 }
 

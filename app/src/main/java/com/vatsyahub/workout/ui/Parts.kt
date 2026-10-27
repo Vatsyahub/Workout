@@ -79,7 +79,7 @@ fun ListPage(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun Door(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun Door(icon: ImageVector, label: String, detail: String = "", onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -100,7 +100,12 @@ fun Door(icon: ImageVector, label: String, onClick: () -> Unit) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.width(14.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            if (detail.isNotBlank()) {
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
@@ -339,7 +344,12 @@ fun ChoiceChip(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun ActionPage(action: String, onAction: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun ActionPage(
+    action: String,
+    onAction: () -> Unit,
+    showAction: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -353,8 +363,98 @@ fun ActionPage(action: String, onAction: () -> Unit, content: @Composable Column
                 .padding(bottom = 12.dp),
             content = content,
         )
-        PrimaryButton(action, Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp), onAction)
+        if (showAction) {
+            PrimaryButton(action, Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp), onAction)
+        }
     }
+}
+
+@Composable
+fun SoftButton(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+fun InsetCard(
+    title: String,
+    detail: String,
+    icon: ImageVector,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(icon)
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            if (detail.isNotBlank()) {
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+    }
+}
+
+@Composable
+fun BoxField(
+    value: String,
+    placeholder: String = "",
+    onCommit: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(value) }
+    var focused by remember { mutableStateOf(false) }
+    BasicTextField(
+        value = if (focused) text else value,
+        onValueChange = { text = it },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onCommit(text) }),
+        decorationBox = { inner ->
+            Box {
+                if (!focused && value.isEmpty() && placeholder.isNotEmpty()) {
+                    Text(
+                        placeholder,
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                inner()
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .onFocusChanged { state ->
+                if (state.isFocused) {
+                    text = value
+                    focused = true
+                } else if (focused) {
+                    focused = false
+                    onCommit(text)
+                }
+            },
+    )
 }
 
 @Composable

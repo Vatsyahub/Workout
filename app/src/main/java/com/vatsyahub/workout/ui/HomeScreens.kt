@@ -179,14 +179,20 @@ fun HomeScreen(model: AppModel) {
 fun WorkoutScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     Page {
-        Door(Icons.Filled.FitnessCenter, "Heavy") { model.beginBuild("HEAVY") }
-        Door(Icons.Filled.AccessibilityNew, "Bodyweight") { model.beginBuild("BODYWEIGHT") }
-        Door(Icons.Filled.Timer, "HIIT") { model.newHiit(manual = false) }
+        Door(Icons.Filled.FitnessCenter, "Heavy", "Weights") { model.beginBuild("HEAVY") }
+        Door(Icons.Filled.AccessibilityNew, "Bodyweight", "No weights") { model.beginBuild("BODYWEIGHT") }
+        Door(Icons.Filled.Timer, "HIIT", "Intervals") { model.newHiit(manual = false) }
         snap.kinds.forEach { kind ->
-            Door(kindIcon(kind.shape), kind.name) { model.startOuting(kind.id) }
+            val detail = when (kind.shape) {
+                "SWIM" -> "In the water"
+                "RUN" -> "On the road"
+                "HIKE" -> "On a trail"
+                else -> "An outing"
+            }
+            Door(kindIcon(kind.shape), kind.name, detail) { model.startOuting(kind.id) }
         }
-        Door(Icons.Filled.Edit, "Kind") { model.open(Screen.AddKind) }
-        Door(Icons.Filled.History, "Log") { model.open(Screen.LogType) }
+        Door(Icons.Filled.Edit, "Kind", "Another outing") { model.open(Screen.AddKind) }
+        Door(Icons.Filled.History, "Log", "A session that is already finished") { model.open(Screen.LogType) }
     }
 }
 
@@ -196,29 +202,35 @@ fun AddKindScreen(model: AppModel) {
     FormPage(onSave = {
         if (name.isNotBlank()) model.addKind(name.trim())
     }) {
-        Field("Name", name) { name = it }
-        Text(
-            "Swim, Run, and Hike are already on Home. Use this for another outing.",
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 12.dp),
-        )
+        Panel {
+            Text("New outing", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Swim, Run, and Hike are already on Home. Use this for another outing.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Field("Name", name) { name = it }
+        }
     }
 }
 
 @Composable
 fun LogTypeScreen(model: AppModel) {
     Page {
-        Text(
-            "For a session that is already finished.",
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-        )
-        Door(Icons.Filled.FitnessCenter, "Heavy") { model.beginEmptyStrength("HEAVY") }
-        Door(Icons.Filled.AccessibilityNew, "Bodyweight") { model.beginEmptyStrength("BODYWEIGHT") }
-        Door(Icons.Filled.Timer, "HIIT") { model.newHiit(manual = true) }
-        Door(Icons.Filled.Pool, "Swim") { model.logNamedOuting("Swim") }
-        Door(Icons.AutoMirrored.Filled.DirectionsRun, "Run") { model.logNamedOuting("Run") }
-        Door(Icons.Filled.Terrain, "Hike") { model.logNamedOuting("Hike") }
+        Panel {
+            Text("Log a workout", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "For a session that is already finished.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        Door(Icons.Filled.FitnessCenter, "Heavy", "Weights you already finished") { model.beginEmptyStrength("HEAVY") }
+        Door(Icons.Filled.AccessibilityNew, "Bodyweight", "A session without weights") { model.beginEmptyStrength("BODYWEIGHT") }
+        Door(Icons.Filled.Timer, "HIIT", "Intervals you already finished") { model.newHiit(manual = true) }
+        Door(Icons.Filled.Pool, "Swim", "Distance and time in the water") { model.logNamedOuting("Swim") }
+        Door(Icons.AutoMirrored.Filled.DirectionsRun, "Run", "Distance and time on the road") { model.logNamedOuting("Run") }
+        Door(Icons.Filled.Terrain, "Hike", "Distance, time, and the climb") { model.logNamedOuting("Hike") }
     }
 }
 
@@ -253,26 +265,33 @@ fun BuildScreen(model: AppModel) {
         build.picks.map { line -> snap.exercises.find { it.id == line.exerciseId }?.usage.orEmpty() },
         build.kind,
     )
-    ActionPage(if (picking) "Open workout" else "Build", {
-        if (picking) {
-            if (build.picks.isEmpty()) return@ActionPage
-            model.openPicked()
-        } else {
-            val total = build.parts.sumOf { it.count }
-            if (total < 1) return@ActionPage
-            model.drawBuild()
-        }
-    }) {
+    ActionPage(
+        if (picking) "Open workout" else "Build",
+        {
+            if (picking) {
+                if (build.picks.isEmpty()) return@ActionPage
+                model.openPicked()
+            } else {
+                val total = build.parts.sumOf { it.count }
+                if (total < 1) return@ActionPage
+                model.drawBuild()
+            }
+        },
+        showAction = !picking || build.picks.isNotEmpty(),
+    ) {
         if (!picking && pool.isNotEmpty()) {
-            Text(
-                if (byType) {
-                    "Tap Build to draw exercises of each workout type you set above zero."
-                } else {
-                    "Tap Build to draw exercises from each body part you set above zero."
-                },
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-            )
+            Panel {
+                Text(if (byType) "Workout type" else "Body part", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (byType) {
+                        "Tap Build to draw exercises of each workout type you set above zero."
+                    } else {
+                        "Tap Build to draw exercises from each body part you set above zero."
+                    },
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             ChoiceChip("Body part", build.mode == "PART") { model.setBuildMode("PART") }
@@ -405,6 +424,7 @@ private fun PickedExerciseCard(
     onReps: (Int, Int) -> Unit,
     onWeight: (Int, Double?) -> Unit,
 ) {
+    var editing by remember(line.exerciseId) { mutableStateOf(false) }
     Panel {
         Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -427,28 +447,25 @@ private fun PickedExerciseCard(
             }
         }
         val summary = formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight)
-        Text(
-            "Sets and reps",
-            color = MaterialTheme.colorScheme.secondary,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(top = 10.dp),
-        )
         if (summary.isNotBlank()) {
-            Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
+            Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
         }
-        SetTableHeader(showWeight)
-        line.sets.forEachIndexed { setIndex, set ->
-            SetRow(
-                label = "Set ${setIndex + 1}",
-                reps = set.reps,
-                weight = set.weightKg,
-                heavy = showWeight,
-                onRemove = { onRemoveSet(setIndex) },
-                onReps = { onReps(setIndex, it) },
-                onWeight = { onWeight(setIndex, it) },
-            )
+        SoftButton("Sets and reps") { editing = !editing }
+        if (editing) {
+            SetTableHeader(showWeight)
+            line.sets.forEachIndexed { setIndex, set ->
+                SetRow(
+                    label = "Set ${setIndex + 1}",
+                    reps = set.reps,
+                    weight = set.weightKg,
+                    heavy = showWeight,
+                    onRemove = { onRemoveSet(setIndex) },
+                    onReps = { onReps(setIndex, it) },
+                    onWeight = { onWeight(setIndex, it) },
+                )
+            }
+            QuietButton("Add set", onClick = onAddSet)
         }
-        QuietButton("Add set", onClick = onAddSet)
     }
 }
 
@@ -570,6 +587,16 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
         model.saveExercise(exerciseId, trimmed, body.trim(), usage, types)
         model.back()
     }) {
+        Panel {
+            Text(
+                if (exerciseId == null) "New exercise" else existing?.name ?: "Exercise",
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                "Name, body part, and how you use it.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         Field("Name", name) { name = it }
         Field("Body part", body) { body = it }
         Label("Used for")
@@ -600,6 +627,7 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
         QuietButton("Add type") {
             includeType(draftType)
             draftType = ""
+        }
         }
         if (exerciseId != null) {
             QuietButton("Delete exercise", MaterialTheme.colorScheme.error) { model.deleteExercise(exerciseId) }
@@ -636,9 +664,9 @@ fun SettingsScreen(model: AppModel) {
                 }
             }
         }
-        Door(Icons.Filled.Person, "Edit profile") { model.open(Screen.Profile) }
-        Door(Icons.Filled.History, "Reports") { model.open(Screen.Reports) }
-        Door(Icons.Filled.Folder, "Backup") { model.open(Screen.Carry) }
+        Door(Icons.Filled.Person, "Edit profile", "Name, age, weight, height, and photo") { model.open(Screen.Profile) }
+        Door(Icons.Filled.History, "Reports", "This week, one exercise, and bests") { model.open(Screen.Reports) }
+        Door(Icons.Filled.Folder, "Backup", "Export or import a file") { model.open(Screen.Carry) }
     }
 }
 
@@ -687,20 +715,35 @@ fun ProfileScreen(model: AppModel) {
         )
         model.back()
     }) {
-        if (bitmap == null) {
-            Door(Icons.Filled.Person, "Photo") { pick.launch("image/*") }
-        } else {
-            Image(
-                bitmap,
-                contentDescription = "Photo",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .clickable { pick.launch("image/*") },
+        Panel {
+            Text("Photo", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Shown on Home. Tap to choose a picture.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
+            if (bitmap == null) {
+                InsetCard("Photo", "Choose a picture", Icons.Filled.Person) { pick.launch("image/*") }
+            } else {
+                Image(
+                    bitmap,
+                    contentDescription = "Photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .padding(vertical = 8.dp)
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .clickable { pick.launch("image/*") },
+                )
+            }
         }
+        Panel {
+            Text("Details", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Name, age, weight, and height.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         Field("Name", name) {
             dirty = true
             name = it
@@ -716,6 +759,7 @@ fun ProfileScreen(model: AppModel) {
         Field("Height", height, number = true) {
             dirty = true
             height = it
+        }
         }
     }
 }
@@ -742,13 +786,16 @@ fun CarryScreen(model: AppModel) {
     }
     Page {
         val waiting = pending
-        Text(
-            "One file of your profile, exercises, and logs.",
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
-        )
+        Panel {
+            Text("Backup", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "One file of your profile, exercises, and logs.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         if (waiting != null) {
-            Door(Icons.Filled.Folder, "Replace everything with this file") {
+            Door(Icons.Filled.Folder, "Replace everything with this file", "Overwrites the workouts on this phone") {
                 scope.launch {
                     val ok = model.importText(waiting)
                     pending = null
@@ -756,8 +803,8 @@ fun CarryScreen(model: AppModel) {
                 }
             }
         } else {
-            Door(Icons.Filled.Folder, "Export") { export.launch("workout.json") }
-            Door(Icons.Filled.Folder, "Import") { open.launch(arrayOf("application/json", "text/*", "*/*")) }
+            Door(Icons.Filled.Folder, "Export", "Save a workout.json file") { export.launch("workout.json") }
+            Door(Icons.Filled.Folder, "Import", "Read a saved workout file") { open.launch(arrayOf("application/json", "text/*", "*/*")) }
             model.carryNote?.let {
                 Panel { Text(it, style = MaterialTheme.typography.titleMedium) }
             }
@@ -768,11 +815,14 @@ fun CarryScreen(model: AppModel) {
 @Composable
 fun ReportsScreen(model: AppModel) {
     Page {
-        Text(
-            "Pick a report.",
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-        )
+        Panel {
+            Text("Reports", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Pick a report.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         WorkoutCard("This week", "Workouts this week, and what changed since last week.", icon = Icons.Filled.History) {
             model.open(Screen.Weekly)
         }
