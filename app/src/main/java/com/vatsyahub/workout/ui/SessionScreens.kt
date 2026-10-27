@@ -11,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -64,28 +66,41 @@ fun StrengthScreen(model: AppModel) {
     val draft = model.strength ?: return
     val heavy = draft.kind == "HEAVY"
     val chooseDate = pickDate(draft.day) { model.setDraftDay(it) }
-    Page {
-        Word(dayText(draft.day)) { chooseDate() }
-        Line(if (heavy) "Heavy" else "Bodyweight")
+    ActionPage("Finish", { model.saveStrength() }) {
+        QuietButton(dayText(draft.day)) { chooseDate() }
+        if (draft.lines.isEmpty()) {
+            Panel {
+                Text("Add the exercises in this session.")
+            }
+        }
         draft.lines.forEachIndexed { lineIndex, line ->
             val exercise = snap.exercises.find { it.id == line.exerciseId }
-            Word(exercise?.name ?: "Exercise") { model.openPicker(Picker.StrengthSwap(lineIndex)) }
-            line.sets.forEachIndexed { setIndex, set ->
-                SetRow(
-                    label = "Set ${setIndex + 1}",
-                    reps = set.reps,
-                    weight = set.weightKg,
-                    heavy = heavy,
-                    onRemove = { model.removeDraftSet(lineIndex, setIndex) },
-                    onReps = { model.setDraftReps(lineIndex, setIndex, it) },
-                    onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
+            Panel {
+                Text(
+                    exercise?.name ?: "Exercise",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
                 )
+                line.sets.forEachIndexed { setIndex, set ->
+                    SetRow(
+                        label = "Set ${setIndex + 1}",
+                        reps = set.reps,
+                        weight = set.weightKg,
+                        heavy = heavy,
+                        onRemove = { model.removeDraftSet(lineIndex, setIndex) },
+                        onReps = { model.setDraftReps(lineIndex, setIndex, it) },
+                        onWeight = { model.setDraftWeight(lineIndex, setIndex, it) },
+                    )
+                }
+                QuietButton("Add set") { model.addDraftSet(lineIndex) }
             }
-            Word("Set ${line.sets.size + 1}") { model.addDraftSet(lineIndex) }
         }
-        Word("Exercise") { model.openPicker(Picker.AddStrength(null)) }
-        Line("${draft.lines.size} exercises")
-        Line("${draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }} reps")
+        QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
+        Text(
+            "${draft.lines.size} exercises · ${draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }} reps",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 8.dp),
+        )
         Editable(
             draft.durationSec?.let { formatDuration(it) } ?: "Time",
             durationRaw(draft.durationSec),
@@ -93,8 +108,7 @@ fun StrengthScreen(model: AppModel) {
         ) { text ->
             model.setDraftDuration(parseDuration(text, true))
         }
-        Word("Reroll") { model.rerollDraftAll() }
-        Word("Save") { model.saveStrength() }
+        QuietButton("Reroll all") { model.rerollDraftAll() }
     }
 }
 
@@ -128,7 +142,9 @@ fun SetRow(
             }
         }
     }
-    if (removing) Word("Remove") { onRemove() }
+    if (removing) {
+        QuietButton("Remove set", MaterialTheme.colorScheme.error, onRemove)
+    }
 }
 
 @Composable
@@ -137,44 +153,70 @@ fun HiitScreen(model: AppModel) {
     val draft = model.hiit ?: return
     val shared = draft.sets.all { it.shared }
     val chooseDate = pickDate(draft.day) { model.setHiitDay(it) }
-    Page {
-        Word(dayText(draft.day)) { chooseDate() }
+    val action = if (draft.manual) "Save" else "Start"
+    ActionPage(action, { if (draft.manual) model.saveManualHiit() else model.startClock() }) {
+        QuietButton(dayText(draft.day)) { chooseDate() }
         val rounds = if (shared) "${roundsOf(draft.template)} rounds" else null
         val label = if (shared) patternLabel(draft.template) else "Mixed"
-        Word(if (rounds == null) label else "$label\n$rounds") { model.openPatterns(null) }
-        Editable("${draft.workSec} s", draft.workSec.toString(), number = true) { text ->
-            text.toIntOrNull()?.let { model.setWork(it) }
-        }
-        Editable("${draft.restSec} s", draft.restSec.toString(), number = true) { text ->
-            text.toIntOrNull()?.let { model.setRest(it) }
-        }
-        Editable(formatBreak(draft.breakSec), durationRaw(draft.breakSec), number = true) { text ->
-            parseDuration(text, true)?.let { model.setBreak(it) }
+        Panel {
+            Text("Pattern", color = MaterialTheme.colorScheme.secondary)
+            Text(
+                if (rounds == null) label else "$label · $rounds",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .clickable { model.openPatterns(null) },
+            )
+            Text("Work", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+            Editable("${draft.workSec} s", draft.workSec.toString(), number = true) { text ->
+                text.toIntOrNull()?.let { model.setWork(it) }
+            }
+            Text("Rest", color = MaterialTheme.colorScheme.secondary)
+            Editable("${draft.restSec} s", draft.restSec.toString(), number = true) { text ->
+                text.toIntOrNull()?.let { model.setRest(it) }
+            }
+            Text("Break", color = MaterialTheme.colorScheme.secondary)
+            Editable(formatBreak(draft.breakSec), durationRaw(draft.breakSec), number = true) { text ->
+                parseDuration(text, true)?.let { model.setBreak(it) }
+            }
         }
         draft.sets.forEachIndexed { setIndex, set ->
-            Word("Set ${setIndex + 1}") { model.open(Screen.SetMenu(setIndex)) }
-            Editable(set.exerciseIds.size.toString(), set.exerciseIds.size.toString(), number = true) { text ->
-                text.toIntOrNull()?.let { model.setHiitCount(setIndex, it) }
-            }
-            set.exerciseIds.forEachIndexed { line, id ->
-                val name = snap.exercises.find { it.id == id }?.name ?: "Exercise"
-                Word(name) { model.openPicker(Picker.HiitSwap(setIndex, line)) }
-            }
-            if (draft.manual) {
-                val slots = expand(set.exerciseIds.size, set.passes)
-                slots.forEachIndexed { bout, slot ->
-                    val id = set.exerciseIds.getOrNull(slot)
+            Panel {
+                Text(
+                    "Set ${setIndex + 1}",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.clickable { model.open(Screen.SetMenu(setIndex)) },
+                )
+                Text("Exercises", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 6.dp))
+                Editable(set.exerciseIds.size.toString(), set.exerciseIds.size.toString(), number = true) { text ->
+                    text.toIntOrNull()?.let { model.setHiitCount(setIndex, it) }
+                }
+                set.exerciseIds.forEachIndexed { line, id ->
                     val name = snap.exercises.find { it.id == id }?.name ?: "Exercise"
-                    val seconds = set.splitSeconds.getOrElse(bout) { draft.workSec }
-                    Editable("$name $seconds s", seconds.toString(), number = true) { text ->
-                        text.toIntOrNull()?.let { model.setBoutSeconds(setIndex, bout, it) }
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { model.openPicker(Picker.HiitSwap(setIndex, line)) }
+                            .padding(vertical = 6.dp),
+                    )
+                }
+                if (draft.manual) {
+                    val slots = expand(set.exerciseIds.size, set.passes)
+                    slots.forEachIndexed { bout, slot ->
+                        val id = set.exerciseIds.getOrNull(slot)
+                        val name = snap.exercises.find { it.id == id }?.name ?: "Exercise"
+                        val seconds = set.splitSeconds.getOrElse(bout) { draft.workSec }
+                        Editable("$name $seconds s", seconds.toString(), number = true) { text ->
+                            text.toIntOrNull()?.let { model.setBoutSeconds(setIndex, bout, it) }
+                        }
                     }
                 }
             }
         }
-        Word("Set") { model.addHiitSet() }
-        Word("Reroll") { model.rerollHiitAll() }
-        if (draft.manual) Word("Save") { model.saveManualHiit() } else Word("Start") { model.startClock() }
+        QuietButton("Add set") { model.addHiitSet() }
+        QuietButton("Reroll all") { model.rerollHiitAll() }
     }
 }
 
@@ -354,8 +396,21 @@ private fun Control(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Box(modifier.size(72.dp).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(visual))
+    val filled = visual >= 48.dp
+    Box(
+        modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .background(if (filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            modifier = Modifier.size(visual),
+            tint = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 

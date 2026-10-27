@@ -30,6 +30,7 @@ import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.fingerprint
 import com.vatsyahub.workout.domain.rerollAll
 import com.vatsyahub.workout.domain.rerollOne
+import com.vatsyahub.workout.domain.shapeForKindName
 import com.vatsyahub.workout.domain.timeline
 import java.time.LocalDate
 import kotlin.random.Random
@@ -156,6 +157,42 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun showHome() {
         while (stack.size > 1) stack.removeAt(stack.lastIndex)
+    }
+
+    fun tab(screen: Screen) {
+        if (stack.size == 1 && stack.first() == screen) return
+        stack.clear()
+        stack.add(screen)
+    }
+
+    fun startNamedOuting(name: String) {
+        if (busy()) return
+        viewModelScope.launch {
+            val id = snap.value.kinds.find { it.name.equals(name, ignoreCase = true) }?.id ?: repo.addKind(name)
+            startOuting(id)
+        }
+    }
+
+    fun logNamedOuting(name: String) {
+        if (busy()) return
+        viewModelScope.launch {
+            val existing = snap.value.kinds.find { it.name.equals(name, ignoreCase = true) }
+            val id = existing?.id ?: repo.addKind(name)
+            val shape = existing?.shape ?: shapeForKindName(name)
+            outing = OutingDraft(
+                kindId = id,
+                day = LocalDate.now(),
+                durationSec = null,
+                distanceM = null,
+                gradient = null,
+                location = null,
+                bottomM = null,
+                topM = null,
+                bothWays = if (shape == "HIKE") false else null,
+                fields = emptyMap(),
+            )
+            open(Screen.OutingForm)
+        }
     }
 
     fun showLog(id: Long) {

@@ -2,21 +2,27 @@ package com.vatsyahub.workout.ui
 
 import android.graphics.BitmapFactory
 import android.util.Base64
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -24,9 +30,12 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pool
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,17 +45,32 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.vatsyahub.workout.data.localDay
 import com.vatsyahub.workout.data.pool
+import com.vatsyahub.workout.data.summary
 import com.vatsyahub.workout.data.typesOf
 import com.vatsyahub.workout.domain.parseDecimal
+import com.vatsyahub.workout.domain.weekStart
+import java.time.LocalDate
 import kotlinx.coroutines.launch
+
+private val BuiltInOutings = listOf("Swim", "Run", "Hike")
+
+private fun usageLabel(usage: String): String = when (usage) {
+    "HEAVY" -> "Heavy"
+    "BODYWEIGHT" -> "Bodyweight"
+    "BOTH" -> "Both"
+    else -> usage
+}
 
 private fun kindIcon(shape: String): ImageVector = when (shape) {
     "SWIM" -> Icons.Filled.Pool
@@ -58,18 +82,75 @@ private fun kindIcon(shape: String): ImageVector = when (shape) {
 @Composable
 fun HomeScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
-    val title = snap.profile.name.trim().ifBlank { "Home" }
+    val name = snap.profile.name.trim()
+    val today = LocalDate.now()
+    val start = weekStart(today)
+    val end = start.plusDays(6)
+    val week = snap.workouts.count { workout ->
+        workout.finished && !localDay(workout.performedAt).let { it.isBefore(start) || it.isAfter(end) }
+    }
+    val recent = snap.workouts.filter { it.finished }.sortedByDescending { it.performedAt }.take(3)
+    val extraKinds = snap.kinds.filter { kind -> BuiltInOutings.none { it.equals(kind.name, true) } }
     Page {
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
-        )
-        Door(Icons.Filled.FitnessCenter, "Workout") { model.openWorkout() }
-        Door(Icons.Filled.History, "Logs") { model.open(Screen.Logs) }
-        Door(Icons.AutoMirrored.Filled.ViewList, "Exercises") { model.open(Screen.Exercises) }
-        Door(Icons.Filled.Settings, "Settings") { model.open(Screen.Settings) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
+            ProfilePhoto(snap.profile.avatar, 52.dp) { model.tab(Screen.Settings) }
+            Text(
+                if (name.isBlank()) "Workout" else name,
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.padding(start = 14.dp),
+            )
+        }
+        Text("Start a session, or look back at the week.", color = MaterialTheme.colorScheme.secondary)
+        if (model.clock != null || model.timer != null) {
+            PrimaryButton(if (model.clock != null) "Resume HIIT" else "Resume outing") { model.openWorkout() }
+        }
+        SectionLabel("This week")
+        Panel {
+            Text(
+                week.toString(),
+                style = MaterialTheme.typography.headlineLarge,
+            )
+            Text(
+                if (week == 1) "workout" else "workouts",
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            QuietButton("Reports") { model.open(Screen.Reports) }
+        }
+        SectionLabel("Start")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            StartCard(Icons.Filled.FitnessCenter, "Heavy", "Weights", Modifier.weight(1f)) { model.beginBuild("HEAVY") }
+            StartCard(Icons.Filled.AccessibilityNew, "Bodyweight", "No weights", Modifier.weight(1f)) { model.beginBuild("BODYWEIGHT") }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        ) {
+            StartCard(Icons.Filled.Timer, "HIIT", "Intervals", Modifier.weight(1f)) { model.newHiit(manual = false) }
+            StartCard(Icons.Filled.Pool, "Swim", "In the water", Modifier.weight(1f)) { model.startNamedOuting("Swim") }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        ) {
+            StartCard(Icons.AutoMirrored.Filled.DirectionsRun, "Run", "On the road", Modifier.weight(1f)) {
+                model.startNamedOuting("Run")
+            }
+            StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.startNamedOuting("Hike") }
+        }
+        extraKinds.forEach { kind ->
+            Door(kindIcon(kind.shape), kind.name) { model.startOuting(kind.id) }
+        }
+        Door(Icons.Filled.Edit, "Other outing") { model.open(Screen.AddKind) }
+        SectionLabel("Recent")
+        if (recent.isEmpty()) {
+            Text("Finished sessions show up here.", color = MaterialTheme.colorScheme.secondary)
+        } else {
+            recent.forEach { workout ->
+                val summary = snap.summary(workout)
+                WorkoutCard(cardTitle(summary), cardDetail(summary)) { model.open(Screen.LogDetail(workout.id)) }
+            }
+        }
+        QuietButton("Log a past workout") { model.open(Screen.LogType) }
     }
 }
 
@@ -95,17 +176,31 @@ fun AddKindScreen(model: AppModel) {
         if (name.isNotBlank()) model.addKind(name.trim())
     }) {
         Field("Name", name) { name = it }
+        Text(
+            "Swim, Run, and Hike are already on Home. Use this for another outing.",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 12.dp),
+        )
     }
 }
 
 @Composable
 fun LogTypeScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
+    val extra = snap.kinds.filter { kind -> BuiltInOutings.none { it.equals(kind.name, true) } }
     Page {
+        Text(
+            "For a session that is already finished.",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+        )
         Door(Icons.Filled.FitnessCenter, "Heavy") { model.beginEmptyStrength("HEAVY") }
         Door(Icons.Filled.AccessibilityNew, "Bodyweight") { model.beginEmptyStrength("BODYWEIGHT") }
         Door(Icons.Filled.Timer, "HIIT") { model.newHiit(manual = true) }
-        snap.kinds.forEach { kind ->
+        Door(Icons.Filled.Pool, "Swim") { model.logNamedOuting("Swim") }
+        Door(Icons.AutoMirrored.Filled.DirectionsRun, "Run") { model.logNamedOuting("Run") }
+        Door(Icons.Filled.Terrain, "Hike") { model.logNamedOuting("Hike") }
+        extra.forEach { kind ->
             Door(kindIcon(kind.shape), kind.name) { model.beginOutingLog(kind.id) }
         }
     }
@@ -115,74 +210,112 @@ fun LogTypeScreen(model: AppModel) {
 fun BuildScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val build = model.build
-    Page {
-        build.parts.forEachIndexed { index, part ->
-            Word(part.bodyPart.ifBlank { "Part" }) { model.openPicker(Picker.BodyPart(index)) }
-            Editable(part.count.toString(), part.count.toString(), number = true) { text ->
-                text.toIntOrNull()?.let { model.setPartCount(index, it) }
+    val pool = snap.pool(build.kind)
+    val parts = pool.map { it.bodyPart }.distinct().sortedBy { it.lowercase() }
+    if (pool.isEmpty()) {
+        ActionPage("Add exercise", { model.tab(Screen.Exercises) }) {
+            Panel {
+                Text("Add exercises before a workout can be drawn.")
+                Text(
+                    "Heavy only uses heavy exercises. Bodyweight uses bodyweight exercises.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
-        if (build.parts.any { it.bodyPart.isNotBlank() }) {
-            Word("Part") { model.addPart() }
+        return
+    }
+    ActionPage("Build", { model.drawBuild() }) {
+        build.parts.forEachIndexed { index, part ->
+            Panel {
+                Text("Body part", color = MaterialTheme.colorScheme.secondary)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(top = 10.dp),
+                ) {
+                    parts.forEach { name ->
+                        ChoiceChip(name, part.bodyPart.equals(name, true)) { model.choosePart(index, name) }
+                    }
+                }
+                Text("How many", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { model.setPartCount(index, part.count - 1) }) {
+                        Icon(Icons.Filled.Remove, contentDescription = "Fewer")
+                    }
+                    Text(part.count.toString(), style = MaterialTheme.typography.headlineSmall)
+                    IconButton(onClick = { model.setPartCount(index, part.count + 1) }) {
+                        Icon(Icons.Filled.Add, contentDescription = "More")
+                    }
+                }
+                if (build.parts.size > 1) {
+                    QuietButton("Remove", MaterialTheme.colorScheme.error) { model.removePart(index) }
+                }
+            }
         }
-        Word("Draw") { model.drawBuild() }
-        if (snap.pool(build.kind).isEmpty()) {
-            Word("Exercises") { model.open(Screen.Exercises) }
-        }
+        QuietButton("Another body part") { model.addPart() }
     }
 }
 
 @Composable
 fun ExercisesScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
-    var step by remember { mutableStateOf("list") }
     var filter by remember { mutableStateOf("All") }
-    var dimension by remember { mutableStateOf("part") }
-    BackHandler(enabled = step != "list") { step = "list" }
-    val parts = snap.exercises.map { it.bodyPart }.distinct().sortedBy { it.lowercase() }
+    var byType by remember { mutableStateOf(false) }
+    val parts = snap.exercises.map { it.bodyPart }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
     val typeNames = snap.exercises.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
         .distinct()
         .sortedBy { it.lowercase() }
+    val chips = if (byType) typeNames else parts
     val filtered = snap.exercises.filter { exercise ->
-        when (dimension) {
-            "part" -> filter == "All" || exercise.bodyPart.equals(filter, true)
-            else -> filter == "All" || snap.typesOf(exercise.id).any { it.name.equals(filter, true) }
-        }
-    }
-    if (step == "by") {
-        Page {
-            Word("All") {
-                filter = "All"
-                step = "list"
-            }
-            Word("Body part") { step = "part" }
-            Word("Workout type") { step = "type" }
-        }
-        return
-    }
-    if (step == "part" || step == "type") {
-        val choices = if (step == "part") parts else typeNames
-        Page {
-            choices.forEach { name ->
-                Word(name) {
-                    dimension = if (step == "part") "part" else "type"
-                    filter = name
-                    step = "list"
-                }
-            }
-        }
-        return
+        if (filter == "All") return@filter true
+        if (byType) snap.typesOf(exercise.id).any { it.name.equals(filter, true) }
+        else exercise.bodyPart.equals(filter, true)
     }
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Word(filter) { step = "by" }
+                Text(
+                    "Exercises",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                )
+                Text(
+                    "${snap.exercises.size} saved",
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(top = 14.dp, bottom = 8.dp),
+                ) {
+                    ChoiceChip("All", filter == "All") { filter = "All" }
+                    chips.forEach { name ->
+                        ChoiceChip(name, filter.equals(name, true)) { filter = name }
+                    }
+                    ChoiceChip(if (byType) "Body parts" else "Types", false) {
+                        byType = !byType
+                        filter = "All"
+                    }
+                }
+            }
+            if (filtered.isEmpty()) {
+                item {
+                    Panel {
+                        Text(if (snap.exercises.isEmpty()) "No exercises yet." else "Nothing matches this filter.")
+                    }
+                }
             }
             items(filtered, key = { it.id }) { exercise ->
-                Word("${exercise.name} · ${exercise.bodyPart}") { model.open(Screen.Exercise(exercise.id)) }
+                val usage = usageLabel(exercise.usage)
+                WorkoutCard(exercise.name, listOf(exercise.bodyPart, usage).filter { it.isNotBlank() }.joinToString(" · ")) {
+                    model.open(Screen.Exercise(exercise.id))
+                }
             }
             item {
-                Word("Add") { model.open(Screen.AddExercise) }
+                PrimaryButton("Add exercise") { model.open(Screen.AddExercise) }
             }
         }
     }
@@ -241,33 +374,73 @@ fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
     }) {
         Field("Name", name) { name = it }
         Field("Body part", body) { body = it }
-        Label("Usage")
-        listOf("HEAVY" to "Heavy", "BODYWEIGHT" to "Bodyweight", "BOTH" to "Both").forEach { (value, label) ->
-            ToggleRow(label, usage == value) { usage = value }
+        Label("Used for")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            listOf("HEAVY" to "Heavy", "BODYWEIGHT" to "Bodyweight", "BOTH" to "Both").forEach { (value, label) ->
+                ChoiceChip(label, usage == value) { usage = value }
+            }
         }
         Label("Types")
-        known.forEach { typeName ->
-            ToggleRow(typeName, chosen.any { it.equals(typeName, true) }) { toggleType(typeName) }
+        Text(
+            "Tap a type to include it. HIIT draws from these.",
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 8.dp),
+        ) {
+            known.forEach { typeName ->
+                ChoiceChip(typeName, chosen.any { it.equals(typeName, true) }) { toggleType(typeName) }
+            }
         }
         Field("New type", draftType, onDone = {
             includeType(draftType)
             draftType = ""
         }) { draftType = it }
-        Word("Add") {
+        QuietButton("Add type") {
             includeType(draftType)
             draftType = ""
         }
         if (exerciseId != null) {
-            Word("Delete") { model.deleteExercise(exerciseId) }
+            QuietButton("Delete exercise", MaterialTheme.colorScheme.error) { model.deleteExercise(exerciseId) }
         }
     }
 }
 
 @Composable
 fun SettingsScreen(model: AppModel) {
+    val snap by model.snap.collectAsState()
+    val profile = snap.profile
+    val facts = listOfNotNull(
+        profile.age?.let { "$it years" },
+        profile.weightKg?.let { "${trimNumber(it)} kg" },
+        profile.heightCm?.let { "${trimNumber(it)} cm" },
+    ).joinToString(" · ")
     Page {
-        Door(Icons.Filled.Person, "Profile") { model.open(Screen.Profile) }
-        Door(Icons.Filled.Folder, "Carry") { model.open(Screen.Carry) }
+        Text(
+            "Profile",
+            style = MaterialTheme.typography.headlineLarge,
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+        )
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProfilePhoto(profile.avatar, 64.dp) { model.open(Screen.Profile) }
+                Column(Modifier.padding(start = 14.dp)) {
+                    Text(
+                        profile.name.trim().ifBlank { "Add your name" },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    if (facts.isNotBlank()) {
+                        Text(facts, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
+        }
+        Door(Icons.Filled.Person, "Edit profile") { model.open(Screen.Profile) }
+        Door(Icons.Filled.History, "Reports") { model.open(Screen.Reports) }
+        Door(Icons.Filled.Folder, "Backup") { model.open(Screen.Carry) }
     }
 }
 
@@ -394,6 +567,49 @@ fun ReportsScreen(model: AppModel) {
         Word("Exercise") { model.open(Screen.ReportExercises) }
         Word("Bests") { model.open(Screen.Bests) }
     }
+}
+
+@Composable
+private fun ProfilePhoto(avatar: String?, size: Dp, onClick: () -> Unit) {
+    val bitmap = remember(avatar) {
+        avatar?.let { encoded ->
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }
+    }
+    if (bitmap == null) {
+        Box(
+            Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Person, contentDescription = "Profile", tint = MaterialTheme.colorScheme.primary)
+        }
+    } else {
+        Image(
+            bitmap,
+            contentDescription = "Profile",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .clickable(onClick = onClick),
+        )
+    }
+}
+
+private fun cardTitle(summary: String): String {
+    val parts = summary.split(" · ")
+    return parts.getOrElse(1) { summary }
+}
+
+private fun cardDetail(summary: String): String {
+    val parts = summary.split(" · ")
+    if (parts.size < 3) return parts.firstOrNull().orEmpty()
+    return parts.first() + " · " + parts.drop(2).joinToString(" · ")
 }
 
 internal fun trimNumber(value: Double): String =

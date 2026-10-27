@@ -41,6 +41,17 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+private fun historyTitle(summary: String): String {
+    val parts = summary.split(" · ")
+    return parts.getOrElse(1) { summary }
+}
+
+private fun historyDetail(summary: String): String {
+    val parts = summary.split(" · ")
+    if (parts.size < 3) return parts.firstOrNull().orEmpty()
+    return parts.first() + " · " + parts.drop(2).joinToString(" · ")
+}
+
 @Composable
 fun LogsScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
@@ -58,16 +69,37 @@ fun LogsScreen(model: AppModel) {
         .sortedDescending()
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
-            item { Line("This week") }
+            item {
+                Text(
+                    "History",
+                    style = MaterialTheme.typography.headlineLarge,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                )
+                SectionLabel("This week")
+                if (week.isEmpty()) {
+                    Panel {
+                        Text("Nothing logged this week.")
+                    }
+                }
+            }
             items(week, key = { it.id }) { workout ->
-                Word(snap.summary(workout)) { model.open(Screen.LogDetail(workout.id)) }
+                val summary = snap.summary(workout)
+                WorkoutCard(historyTitle(summary), historyDetail(summary)) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
+            }
+            if (months.isNotEmpty()) {
+                item { SectionLabel("Earlier") }
             }
             items(months, key = { "${it.year}-${it.monthValue}" }) { month ->
-                Word(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH))) {
+                WorkoutCard(
+                    month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)),
+                    "Older sessions",
+                ) {
                     model.open(Screen.Month(month.year, month.monthValue))
                 }
             }
-            item { Word("Reports") { model.open(Screen.Reports) } }
+            item { QuietButton("Reports") { model.open(Screen.Reports) } }
         }
     }
 }
@@ -83,7 +115,10 @@ fun MonthScreen(model: AppModel, year: Int, month: Int) {
         LazyColumn(Modifier.fillMaxSize()) {
             item { Line(selected.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH))) }
             items(logs, key = { it.id }) { workout ->
-                Word(snap.summary(workout)) { model.open(Screen.LogDetail(workout.id)) }
+                val summary = snap.summary(workout)
+                WorkoutCard(historyTitle(summary), historyDetail(summary)) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
             }
         }
     }
