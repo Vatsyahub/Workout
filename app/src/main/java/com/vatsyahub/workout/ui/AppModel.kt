@@ -346,16 +346,24 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     private fun loggedReps(exerciseId: Long, asHeavy: Boolean): List<Int>? {
         val loaded = snap.value
-        val kinds = if (asHeavy) setOf("HEAVY", "MIXED") else setOf("BODYWEIGHT", "MIXED")
         val usage = loaded.exercises.find { it.id == exerciseId }?.usage
+        val kinds = if (asHeavy) setOf("HEAVY", "MIXED") else setOf("BODYWEIGHT", "MIXED")
         val sessions = loaded.workouts.filter { it.finished && it.kind in kinds }.sortedByDescending { it.performedAt }
         for (workout in sessions) {
-            if (workout.kind == "MIXED" && asHeavy != (usage != "BODYWEIGHT")) continue
-            if (workout.kind == "HIIT") continue
             val block = loaded.blocks.filter { it.workoutId == workout.id && it.exerciseId == exerciseId }
                 .maxByOrNull { it.position } ?: continue
             val sets = loaded.sets.filter { it.blockId == block.id }.sortedBy { it.position }
             if (sets.isEmpty()) continue
+            val usedHeavy = when (workout.kind) {
+                "HEAVY" -> true
+                "BODYWEIGHT" -> false
+                else -> when (usage) {
+                    "HEAVY" -> true
+                    "BODYWEIGHT" -> false
+                    else -> sets.any { it.weightKg != null }
+                }
+            }
+            if (usedHeavy != asHeavy) continue
             return sets.map { it.reps }
         }
         return null
@@ -368,8 +376,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (!reorder) {
             return lines.map { line ->
                 val card = cards.first { it.key == line.key }
-                if (line.setsEdited || line.sets != openingDraftSets()) line
-                else line.copy(sets = prescribedSets(card, cards, kind))
+                if (line.setsEdited) line else line.copy(sets = prescribedSets(card, cards, kind))
             }
         }
         val ordered = drawnOrder(cards, kind, dragged = false)
@@ -428,7 +435,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removePicked(index: Int) {
-        build = build.copy(picks = build.picks.filterIndexed { i, _ -> i != index })
+        val next = build.picks.filterIndexed { i, _ -> i != index }
+        build = build.copy(
+            picks = arrangePicks(next, reorder = !build.picksDragged),
+            picksDragged = build.picksDragged && next.isNotEmpty(),
+        )
         pickDrag = null
     }
 
@@ -442,7 +453,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         val to = (from + step).coerceIn(0, build.picks.lastIndex)
         if (to == from) return false
         val next = moveItem(build.picks, from, to)
-        build = build.copy(picks = next, picksDragged = true)
+        build = build.copy(picks = arrangePicks(next, reorder = false), picksDragged = true)
         pickDrag = to
         return true
     }
@@ -453,7 +464,11 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun movePicked(from: Int, to: Int) {
         val next = moveItem(build.picks, from, to)
-        build = build.copy(picks = next, picksDragged = build.picksDragged || next !== build.picks)
+        val dragged = build.picksDragged || next !== build.picks
+        build = build.copy(
+            picks = if (next === build.picks) next else arrangePicks(next, reorder = false),
+            picksDragged = dragged,
+        )
         pickDrag = null
     }
 

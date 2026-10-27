@@ -32,9 +32,12 @@ private val muscleRoles: Map<String, MuscleRole> = listOf(
     "lower back" to MuscleRole("spinal", 0, 6),
     "spinal erectors" to MuscleRole("spinal", 0, 6),
     "front deltoids" to MuscleRole("front delts", 1, 0),
+    "front delts" to MuscleRole("front delts", 1, 0),
     "shoulders" to MuscleRole("shoulders", 1, 1),
     "side deltoids" to MuscleRole("side delts", 1, 2),
+    "side delts" to MuscleRole("side delts", 1, 2),
     "rear deltoids" to MuscleRole("rear delts", 1, 3),
+    "rear delts" to MuscleRole("rear delts", 1, 3),
     "biceps" to MuscleRole("biceps", 2, 0),
     "brachialis" to MuscleRole("brachialis", 2, 1),
     "triceps" to MuscleRole("triceps", 2, 2),
@@ -42,6 +45,7 @@ private val muscleRoles: Map<String, MuscleRole> = listOf(
     "forearms" to MuscleRole("forearms", 3, 0),
     "grip" to MuscleRole("forearms", 3, 0),
     "calves" to MuscleRole("calves", 3, 1),
+    "gastrocnemius" to MuscleRole("calves", 3, 1),
     "soleus" to MuscleRole("soleus", 3, 2),
     "ankles" to MuscleRole("calves", 3, 1),
     "abs" to MuscleRole("abs", 3, 3),
@@ -49,8 +53,11 @@ private val muscleRoles: Map<String, MuscleRole> = listOf(
     "obliques" to MuscleRole("obliques", 3, 4),
     "hip flexors" to MuscleRole("hip flexors", 3, 5),
     "hip adductors" to MuscleRole("adductors", 3, 6),
+    "adductors" to MuscleRole("adductors", 3, 6),
     "inner thighs" to MuscleRole("adductors", 3, 6),
     "hip abductors" to MuscleRole("glute medius", 3, 7),
+    "glute medius" to MuscleRole("glute medius", 3, 7),
+    "erectors" to MuscleRole("spinal", 0, 6),
 ).toMap()
 
 private fun roleOf(muscle: String): MuscleRole =
@@ -61,12 +68,15 @@ private fun roleByKey(key: String): MuscleRole =
 
 fun largestMuscle(muscles: List<String>): String {
     if (muscles.isEmpty()) return "other"
-    return muscles.map { roleOf(it) }.minWith(compareBy({ it.band }, { it.rank })).key
+    val ranked = muscles.map { roleOf(it) }
+    val bestBand = ranked.minOf { it.band }
+    return ranked.first { it.band == bestBand }.key
 }
 
 fun lineUse(sessionKind: String, usage: String): String = when (sessionKind) {
+    "HEAVY" -> "HEAVY"
     "BODYWEIGHT" -> "BODYWEIGHT"
-    else -> if (sessionKind == "HEAVY" || usage != "BODYWEIGHT") "HEAVY" else "BODYWEIGHT"
+    else -> if (usage == "HEAVY") "HEAVY" else "BODYWEIGHT"
 }
 
 fun drawnOrder(cards: List<DrawCard>, sessionKind: String, dragged: Boolean): List<DrawCard> =
@@ -88,7 +98,7 @@ fun orderStrength(cards: List<DrawCard>, sessionKind: String): List<DrawCard> {
         )
         sequenced += alternatePushPull(sorted)
     }
-    return fixSpine(placeDependents(sequenced), sessionKind).let { placeDependents(it) }
+    return fixSpine(placeDependents(sequenced), sessionKind)
 }
 
 fun spreadType(pool: List<DrawCard>, count: Int, random: Random): List<DrawCard> {
@@ -194,23 +204,25 @@ private fun sideOf(card: DrawCard): Side {
 }
 
 private fun alternatePushPull(items: List<DrawCard>): List<DrawCard> {
-    val push = items.filter { sideOf(it) == Side.PUSH }
-    val pull = items.filter { sideOf(it) == Side.PULL }
-    if (push.isEmpty() || pull.isEmpty()) return items
-    val others = items.filter { sideOf(it) == Side.OTHER }
+    if (items.none { sideOf(it) == Side.PUSH } || items.none { sideOf(it) == Side.PULL }) return items
+    val remaining = items.toMutableList()
     val mixed = ArrayList<DrawCard>()
-    var i = 0
-    var j = 0
-    var wantPush = true
-    while (i < push.size || j < pull.size) {
-        if (wantPush && i < push.size) mixed += push[i++]
-        else if (!wantPush && j < pull.size) mixed += pull[j++]
-        else if (i < push.size) mixed += push[i++]
-        else mixed += pull[j++]
-        wantPush = !wantPush
+    while (remaining.isNotEmpty()) {
+        val next = remaining.first()
+        val last = mixed.lastOrNull()?.let { sideOf(it) }
+        val nextSide = sideOf(next)
+        if ((last == Side.PUSH || last == Side.PULL) && nextSide == last) {
+            val opposite = if (last == Side.PUSH) Side.PULL else Side.PUSH
+            val candidate = remaining.firstOrNull { sideOf(it) == opposite }
+            if (candidate != null) {
+                mixed += candidate
+                remaining.remove(candidate)
+                continue
+            }
+        }
+        mixed += remaining.removeAt(0)
     }
-    if (others.isEmpty()) return mixed
-    return mixed + others
+    return mixed
 }
 
 private fun placeDependents(items: List<DrawCard>): List<DrawCard> {
@@ -224,52 +236,67 @@ private fun placeDependents(items: List<DrawCard>): List<DrawCard> {
 
 private fun moveAfter(items: MutableList<DrawCard>, predicate: (DrawCard) -> Boolean, anchor: (DrawCard) -> Boolean) {
     if (items.none(anchor)) return
-    val moving = items.filter { predicate(it) && !anchor(it) }
+    val lastAnchor = items.indexOfLast(anchor)
+    val moving = items.filter { card ->
+        predicate(card) && !anchor(card) && items.indexOf(card) < lastAnchor
+    }
     if (moving.isEmpty()) return
     items.removeAll(moving.toSet())
     val at = items.indexOfLast(anchor)
-    if (at < 0) {
-        items.addAll(0, moving)
-        return
-    }
     items.addAll(at + 1, moving)
 }
 
 private fun fixSpine(items: List<DrawCard>, sessionKind: String): List<DrawCard> {
-    val spine = items.filter { isHeavySpine(it, sessionKind) }
-    val load = items.filter { isHeavySquatOrHinge(it, sessionKind) }
-    if (spine.isEmpty() || load.isEmpty()) return items
-    val special = (spine + load).map { it.key }.toSet()
-    val others = items.filter { it.key !in special }
-    if (others.isEmpty()) return spine + items.filter { it.key !in spine.map { spineCard -> spineCard.key }.toSet() }
-    val result = others.toMutableList()
-    val earliest = items.indexOfFirst { it.key in special }.coerceIn(0, result.size)
-    result.addAll(earliest, spine)
-    if (isHeavySpine(result.last(), sessionKind)) {
-        val separator = result.indexOfFirst { !isHeavySpine(it, sessionKind) }
-        if (separator in 0 until result.lastIndex) {
-            result.add(result.removeAt(separator))
-        }
-    }
-    result.addAll(load)
-    return separateSpineLoads(result, sessionKind)
-}
-
-private fun separateSpineLoads(items: List<DrawCard>, sessionKind: String): List<DrawCard> {
     val result = items.toMutableList()
-    repeat(result.size) {
-        for (index in 0 until result.lastIndex) {
-            if (!spineConflict(result[index], result[index + 1], sessionKind)) continue
-            val donor = (index + 2 until result.size).firstOrNull { !spineConflict(result[index], result[it], sessionKind) && !isHeavySpine(result[it], sessionKind) && !isHeavySquatOrHinge(result[it], sessionKind) }
-            if (donor != null) {
-                result.add(index + 1, result.removeAt(donor))
-            } else if (isHeavySquatOrHinge(result[index], sessionKind) && isHeavySpine(result[index + 1], sessionKind)) {
-                val card = result.removeAt(index + 1)
-                result.add(index, card)
-            }
+    if (result.size < 2) return result
+    if (result.none { isHeavySpine(it, sessionKind) } || result.none { isHeavySquatOrHinge(it, sessionKind) }) return result
+    for (spine in result.filter { isHeavySpine(it, sessionKind) }) {
+        val at = result.indexOf(spine)
+        val earlier = (0 until at).firstOrNull { isHeavySquatOrHinge(result[it], sessionKind) } ?: continue
+        result.removeAt(at)
+        result.add(earlier, spine)
+    }
+    var guard = 0
+    while (guard++ < result.size * 2) {
+        val pair = (0 until result.lastIndex).firstOrNull { spineConflict(result[it], result[it + 1], sessionKind) } ?: break
+        if (isHeavySquatOrHinge(result[pair], sessionKind) && isHeavySpine(result[pair + 1], sessionKind)) {
+            val spine = result.removeAt(pair + 1)
+            result.add(pair, spine)
         }
+        val at = (0 until result.lastIndex).firstOrNull { spineConflict(result[it], result[it + 1], sessionKind) } ?: break
+        if (!separatePair(result, at, sessionKind)) break
     }
     return result
+}
+
+private fun separatePair(result: MutableList<DrawCard>, pair: Int, sessionKind: String): Boolean {
+    val earlier = (pair - 1 downTo 0).firstOrNull { index ->
+        val card = result[index]
+        !isHeavySpine(card, sessionKind) && !isHeavySquatOrHinge(card, sessionKind)
+    }
+    if (earlier != null) {
+        val slice = result.subList(earlier, pair).toList()
+        repeat(slice.size) { result.removeAt(earlier) }
+        val spineAt = (0 until result.lastIndex).first { spineConflict(result[it], result[it + 1], sessionKind) }
+        result.addAll(spineAt + 1, slice)
+        return true
+    }
+    val later = (pair + 2 until result.size).firstOrNull { index ->
+        val card = result[index]
+        !isHeavySpine(card, sessionKind) && !isHeavySquatOrHinge(card, sessionKind) && canSeparate(card, result)
+    } ?: return false
+    val card = result.removeAt(later)
+    val spineAt = (0 until result.lastIndex).first { spineConflict(result[it], result[it + 1], sessionKind) }
+    result.add(spineAt + 1, card)
+    return true
+}
+
+private fun canSeparate(card: DrawCard, items: List<DrawCard>): Boolean {
+    if (isCurl(card) && items.any { isRowOrPullUp(it.name) }) return false
+    if (isArmExtension(card) && items.any { isPress(it.name) }) return false
+    if (isLegExtension(card) && items.any { isSquat(it.name) }) return false
+    if (isLateralRaise(card) && items.any { isOverheadPress(it.name) }) return false
+    return true
 }
 
 private fun spineConflict(left: DrawCard, right: DrawCard, sessionKind: String): Boolean {
@@ -281,8 +308,7 @@ private fun spineConflict(left: DrawCard, right: DrawCard, sessionKind: String):
 }
 
 private fun isHeavySpine(card: DrawCard, sessionKind: String): Boolean =
-    lineUse(sessionKind, card.usage) == "HEAVY" &&
-        (largestMuscle(card.muscles) == "spinal" || card.muscles.any { it.equals("Lower Back", true) || it.equals("Spinal Erectors", true) })
+    lineUse(sessionKind, card.usage) == "HEAVY" && largestMuscle(card.muscles) == "spinal" && !isHinge(card) && !isSquat(card.name)
 
 private fun isHeavySquatOrHinge(card: DrawCard, sessionKind: String): Boolean =
     lineUse(sessionKind, card.usage) == "HEAVY" && (isSquat(card.name) || isHinge(card))
@@ -293,7 +319,12 @@ private fun isHinge(card: DrawCard): Boolean {
         (name.contains("deadlift") && card.muscles.any { it.equals("Hamstrings", true) })
 }
 
-private fun isCurl(card: DrawCard) = card.name.contains("curl", true)
+private fun isCurl(card: DrawCard): Boolean {
+    val name = card.name.lowercase()
+    if (!name.contains("curl")) return false
+    if (name.contains("leg curl") || name.contains("hamstring") || name.contains("nordic")) return false
+    return largestMuscle(card.muscles) !in setOf("hamstrings", "quads", "glutes", "calves")
+}
 private fun isRowOrPullUp(name: String): Boolean {
     val text = name.lowercase()
     return text.contains("row") || text.contains("pull-up") || text.contains("pull up") ||
@@ -302,11 +333,14 @@ private fun isRowOrPullUp(name: String): Boolean {
 private fun isArmExtension(card: DrawCard): Boolean {
     val name = card.name.lowercase()
     if (name.contains("leg extension") || name.contains("back extension")) return false
-    return name.contains("pushdown") || name.contains("push-down") || name.contains("triceps extension") || name.contains("skull")
+    if (largestMuscle(card.muscles) == "spinal") return false
+    return name.contains("pushdown") || name.contains("push-down") || name.contains("triceps extension") ||
+        name.contains("skull") || name.contains("kickback")
 }
 private fun isPress(name: String): Boolean {
     val text = name.lowercase()
-    return text.contains("press") || text.contains("push-up") || text.contains("push up") || text.contains("bench")
+    if (text.contains("leg press")) return false
+    return text.contains("press") || text.contains("push-up") || text.contains("push up") || text.contains("pushup")
 }
 private fun isLegExtension(card: DrawCard) = card.name.contains("leg extension", true)
 private fun isSquat(name: String) = name.contains("squat", true)

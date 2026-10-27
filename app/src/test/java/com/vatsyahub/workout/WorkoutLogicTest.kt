@@ -478,8 +478,29 @@ class WorkoutLogicTest {
         assertEquals(10, defaultReps(raise, orderOf(session), "HEAVY"))
         assertEquals(12, defaultReps(pushUp, orderOf(listOf(bench, pushUp)), "BODYWEIGHT"))
         assertEquals(listOf(4, 4, 2), repsFor(bench, orderOf(session), "HEAVY", listOf(4, 4, 2)))
+        assertEquals(listOf(6, 6, 6), repsFor(bench, orderOf(session), "HEAVY", null))
         assertEquals("pecs", largestMuscle(bench.muscles))
         assertEquals("lats", largestMuscle(listOf("Lats", "Biceps")))
+        assertEquals("spinal", largestMuscle(listOf("Lower Back", "Glutes")))
+        val secondLat = card(14, "Pull-Ups", listOf("Lats"), setOf("Pull"), "BOTH")
+        val four = spreadType(listOf(lat, secondLat, row, curl, rear), 4, Random(2)).map { it.name }
+        assertEquals(4, four.size)
+        assertTrue(four.contains("Seated Row"))
+        assertTrue(four.contains("Barbell Curl"))
+        assertTrue(four.contains("Reverse Fly"))
+        assertEquals(1, four.count { it == "Lat Pulldown" || it == "Pull-Ups" })
+        val five = spreadType(listOf(lat, secondLat, row, curl, rear), 5, Random(2)).map { it.name }
+        assertEquals(setOf("Lat Pulldown", "Pull-Ups", "Seated Row", "Barbell Curl", "Reverse Fly"), five.toSet())
+        val picked = listOf(curl, lat, bench)
+        assertEquals(picked.map { it.id }.toSet(), drawnOrder(picked, "HEAVY", dragged = false).map { it.id }.toSet())
+        val loadedPress = card(32, "Zercher Press", listOf("Chest"), setOf("Push"), "HEAVY")
+        val archer = card(33, "Archer Push-Ups", listOf("Chest"), setOf("Push"), "BODYWEIGHT")
+        assertEquals(
+            listOf("Zercher Press", "Archer Push-Ups"),
+            drawnOrder(listOf(archer, loadedPress), "MIXED", dragged = false).map { it.name },
+        )
+        assertTrue(ordered.indexOf("Back Squat") < ordered.indexOf("Barbell Curl"))
+        assertTrue(ordered.indexOf("Lateral Raise") < ordered.indexOf("Barbell Curl"))
     }
 
     private fun card(id: Long, name: String, muscles: List<String>, types: Set<String>, usage: String) =
