@@ -36,6 +36,7 @@ import com.vatsyahub.workout.domain.drawBodyPart
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.fingerprint
+import com.vatsyahub.workout.domain.moveItem
 import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.SetLoad
@@ -43,6 +44,7 @@ import com.vatsyahub.workout.domain.repeatStrength
 import com.vatsyahub.workout.domain.rerollAll
 import com.vatsyahub.workout.domain.rerollOne
 import com.vatsyahub.workout.domain.shapeForKindName
+import com.vatsyahub.workout.domain.stepExercise
 import com.vatsyahub.workout.domain.timeline
 import com.vatsyahub.workout.domain.withFavourite
 import java.time.LocalDate
@@ -183,7 +185,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (stack.lastOrNull() == Screen.Strength && draft != null && draft.started && !draft.logging) {
             val under = stack.getOrNull(stack.lastIndex - 1)
             val fromPick = under == Screen.Build && build.mode == "PICK"
-            if (!fromPick) {
+            if (fromPick) {
+                build = build.copy(picks = draft.lines)
+            } else {
                 strength = draft.copy(started = false)
                 return
             }
@@ -349,15 +353,14 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (index in build.picks.indices) pickDrag = index
     }
 
-    fun dragPicked(step: Int) {
-        val from = pickDrag ?: return
-        if (step == 0) return
+    fun dragPicked(step: Int): Boolean {
+        val from = pickDrag ?: return false
+        if (step == 0 || build.picks.isEmpty()) return false
         val to = (from + step).coerceIn(0, build.picks.lastIndex)
-        if (to == from) return
-        val picks = build.picks.toMutableList()
-        picks.add(to, picks.removeAt(from))
-        build = build.copy(picks = picks)
+        if (to == from) return false
+        build = build.copy(picks = moveItem(build.picks, from, to))
         pickDrag = to
+        return true
     }
 
     fun endPickDrag() {
@@ -423,10 +426,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     fun stepStrength(delta: Int) {
         val draft = strength ?: return
-        if (draft.lines.isEmpty()) return
-        val next = draft.focus + delta
-        if (next !in draft.lines.indices) return
-        strength = draft.copy(focus = next)
+        val count = draft.lines.size
+        if (count == 0 || delta == 0) return
+        var index = draft.focus
+        repeat(kotlin.math.abs(delta)) {
+            index = stepExercise(index, count, delta > 0)
+        }
+        if (index != draft.focus) strength = draft.copy(focus = index)
     }
 
     fun beginDraftDrag(index: Int) {
@@ -434,14 +440,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (index in draft.lines.indices) draftDrag = index
     }
 
-    fun dragDraft(step: Int) {
-        val from = draftDrag ?: return
-        val draft = strength ?: return
-        if (step == 0 || draft.lines.isEmpty()) return
+    fun dragDraft(step: Int): Boolean {
+        val from = draftDrag ?: return false
+        val draft = strength ?: return false
+        if (step == 0 || draft.lines.isEmpty()) return false
         val to = (from + step).coerceIn(0, draft.lines.lastIndex)
-        if (to == from) return
-        val lines = draft.lines.toMutableList()
-        lines.add(to, lines.removeAt(from))
+        if (to == from) return false
+        val lines = moveItem(draft.lines, from, to)
         val focus = when (draft.focus) {
             from -> to
             in minOf(from, to)..maxOf(from, to) -> draft.focus + if (from < to) -1 else 1
@@ -449,6 +454,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         }
         strength = draft.copy(lines = lines, focus = focus.coerceIn(0, lines.lastIndex))
         draftDrag = to
+        return true
     }
 
     fun endDraftDrag() {
@@ -654,13 +660,16 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         when (workout.kind) {
             "HEAVY", "BODYWEIGHT", "MIXED" -> {
                 val plan = repeatStrength(loggedSession(loaded, workout))
+                val lines = plan.lines.map { line ->
+                    StrengthLine(line.exerciseId, line.sets.map { DraftSet(it.reps, it.weightKg) })
+                }
                 strength = StrengthDraft(
                     plan.kind,
                     LocalDate.now(),
                     plan.durationSec,
-                    plan.lines.map { line ->
-                        StrengthLine(line.exerciseId, line.sets.map { DraftSet(it.reps, it.weightKg) })
-                    },
+                    lines,
+                    started = lines.isNotEmpty(),
+                    focus = 0,
                 )
                 open(Screen.Strength)
             }

@@ -3,7 +3,8 @@ package com.vatsyahub.workout.ui
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -37,7 +38,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -49,13 +49,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.vatsyahub.workout.domain.dragSteps
 import java.time.LocalDate
 
 @Composable
@@ -205,42 +206,58 @@ fun OrderBadge(number: Int) {
 }
 
 @Composable
-fun DragGrip(onStart: () -> Unit, onStep: (Int) -> Unit, onEnd: () -> Unit) {
-    val start by rememberUpdatedState(onStart)
-    val step by rememberUpdatedState(onStep)
-    val end by rememberUpdatedState(onEnd)
-    val threshold = with(LocalDensity.current) { 56.dp.toPx() }
-    var moved by remember { mutableFloatStateOf(0f) }
+fun DragGrip(
+    onStart: () -> Unit,
+    onStep: (Int) -> Boolean,
+    onOffset: (Float) -> Unit,
+    onEnd: () -> Unit,
+    span: () -> Float,
+) {
+    val start = rememberUpdatedState(onStart)
+    val step = rememberUpdatedState(onStep)
+    val offset = rememberUpdatedState(onOffset)
+    val end = rememberUpdatedState(onEnd)
+    val spanState = rememberUpdatedState(span)
     Box(
         Modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = {
-                        moved = 0f
-                        start()
-                    },
-                    onDragEnd = {
-                        moved = 0f
-                        end()
-                    },
-                    onDragCancel = {
-                        moved = 0f
-                        end()
-                    },
-                    onDrag = { change, amount ->
-                        change.consume()
-                        moved += amount.y
-                        while (moved >= threshold) {
-                            moved -= threshold
-                            step(1)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    start.value()
+                    down.consume()
+                    var moved = 0f
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            val delta = change.position - change.previousPosition
+                            change.consume()
+                            if (delta.y == 0f) continue
+                            moved += delta.y
+                            val item = spanState.value().coerceAtLeast(48f)
+                            var guard = 0
+                            while (guard++ < 24) {
+                                val shift = dragSteps(moved, item)
+                                if (shift.steps == 0) {
+                                    moved = shift.offset
+                                    break
+                                }
+                                val dir = if (shift.steps > 0) 1 else -1
+                                if (!step.value(dir)) {
+                                    moved = moved.coerceIn(-item / 2f, item / 2f)
+                                    break
+                                }
+                                moved -= dir * item
+                            }
+                            offset.value(moved)
                         }
-                        while (moved <= -threshold) {
-                            moved += threshold
-                            step(-1)
-                        }
-                    },
-                )
+                    } finally {
+                        offset.value(0f)
+                        end.value()
+                    }
+                }
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -415,6 +432,7 @@ fun ActionPage(
     action: String,
     onAction: () -> Unit,
     showAction: Boolean = true,
+    scrollEnabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -425,7 +443,7 @@ fun ActionPage(
         Column(
             Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(rememberScrollState(), enabled = scrollEnabled)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 12.dp),
             content = content,

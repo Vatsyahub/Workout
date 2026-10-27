@@ -47,12 +47,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -110,7 +115,7 @@ fun StrengthScreen(model: AppModel) {
         Panel {
             Text(strengthLabel(draft.kind), style = MaterialTheme.typography.titleLarge)
             Text(
-                "Tap a set line to change sets and reps.",
+                "Tap a set line to change sets and reps. Drag the handle to reorder.",
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -129,56 +134,75 @@ fun StrengthScreen(model: AppModel) {
             val exercise = snap.exercises.find { it.id == line.exerciseId }
             val showWeight = showsWeight(draft.kind, exercise?.usage)
             key(line.key) {
-                Panel {
-                    Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OrderBadge(lineIndex + 1)
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .padding(start = 12.dp)
-                                .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
-                        ) {
-                            Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                "Body part",
-                                color = MaterialTheme.colorScheme.secondary,
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
-                            Text(
-                                exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
-                                color = MaterialTheme.colorScheme.secondary,
-                            )
-                            if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                var height by remember(line.key) { mutableIntStateOf(1) }
+                var lift by remember(line.key) { mutableFloatStateOf(0f) }
+                var dragging by remember(line.key) { mutableStateOf(false) }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .zIndex(if (dragging) 1f else 0f)
+                        .onSizeChanged { height = it.height }
+                        .graphicsLayer { translationY = lift },
+                ) {
+                    Panel {
+                        Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OrderBadge(lineIndex + 1)
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .padding(start = 12.dp)
+                                    .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
+                            ) {
+                                Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                                 Text(
-                                    "Workout type",
+                                    "Body part",
                                     color = MaterialTheme.colorScheme.secondary,
                                     style = MaterialTheme.typography.labelLarge,
                                     modifier = Modifier.padding(top = 6.dp),
                                 )
-                                Text(line.group, color = MaterialTheme.colorScheme.secondary)
+                                Text(
+                                    exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                                if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                                    Text(
+                                        "Workout type",
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
+                                    Text(line.group, color = MaterialTheme.colorScheme.secondary)
+                                }
+                            }
+                            DragGrip(
+                                onStart = {
+                                    dragging = true
+                                    model.beginDraftDrag(lineIndex)
+                                },
+                                onStep = { model.dragDraft(it) },
+                                onOffset = { lift = it },
+                                onEnd = {
+                                    dragging = false
+                                    model.endDraftDrag()
+                                },
+                                span = { height.toFloat() },
+                            )
+                            if (line.groupKind != "PICK") {
+                                IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                                }
+                            }
+                            IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                             }
                         }
-                        DragGrip(
-                            { model.beginDraftDrag(lineIndex) },
-                            { model.dragDraft(it) },
-                            { model.endDraftDrag() },
-                        )
-                        if (line.groupKind != "PICK") {
-                            IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
-                            }
-                        }
-                        IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                        }
+                        CompactSets(
+                            formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
+                            showWeight,
+                            line.sets,
+                        ) { model.replaceDraftSets(lineIndex, it) }
                     }
-                    CompactSets(
-                        formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight),
-                        showWeight,
-                        line.sets,
-                    ) { model.replaceDraftSets(lineIndex, it) }
                 }
             }
         }
@@ -257,6 +281,17 @@ private fun StrengthFocus(model: AppModel, draft: StrengthDraft) {
                 showWeight,
                 line.sets,
             ) { model.replaceDraftSets(page, it) }
+            if (draft.lines.size > 1) {
+                Text(
+                    when (page) {
+                        0 -> "Swipe left for the next exercise."
+                        draft.lines.lastIndex -> "Swipe right for the previous exercise."
+                        else -> "Swipe left for the next exercise, or right for the previous."
+                    },
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
     }
 }

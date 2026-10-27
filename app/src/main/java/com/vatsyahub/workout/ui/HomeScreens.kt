@@ -43,6 +43,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,8 +53,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -426,12 +431,22 @@ private fun PickedExerciseCard(
     onName: () -> Unit,
     onRemove: () -> Unit,
     onDragStart: () -> Unit,
-    onDragStep: (Int) -> Unit,
+    onDragStep: (Int) -> Boolean,
     onDragEnd: () -> Unit,
     onSave: (List<DraftSet>) -> Unit,
 ) {
     var editing by remember(line.key) { mutableStateOf(false) }
     var draft by remember(line.key) { mutableStateOf(line.sets) }
+    var height by remember(line.key) { mutableIntStateOf(1) }
+    var lift by remember(line.key) { mutableFloatStateOf(0f) }
+    var dragging by remember(line.key) { mutableStateOf(false) }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .zIndex(if (dragging) 1f else 0f)
+            .onSizeChanged { height = it.height }
+            .graphicsLayer { translationY = lift },
+    ) {
     Panel {
         Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -449,7 +464,19 @@ private fun PickedExerciseCard(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            DragGrip(onDragStart, onDragStep, onDragEnd)
+            DragGrip(
+                onStart = {
+                    dragging = true
+                    onDragStart()
+                },
+                onStep = onDragStep,
+                onOffset = { lift = it },
+                onEnd = {
+                    dragging = false
+                    onDragEnd()
+                },
+                span = { height.toFloat() },
+            )
             IconButton(onClick = onRemove) {
                 Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
             }
@@ -485,6 +512,7 @@ private fun PickedExerciseCard(
                 editing = false
             }
         }
+    }
     }
 }
 

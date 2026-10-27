@@ -9,11 +9,13 @@ import com.vatsyahub.workout.domain.bestsReport
 import com.vatsyahub.workout.domain.catchUp
 import com.vatsyahub.workout.domain.climbMetres
 import com.vatsyahub.workout.domain.coveredMetres
+import com.vatsyahub.workout.domain.dragSteps
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.formatPace
+import com.vatsyahub.workout.domain.moveItem
 import com.vatsyahub.workout.domain.LoggedLoad
 import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.formatSets
@@ -29,6 +31,7 @@ import com.vatsyahub.workout.domain.parseDuration
 import com.vatsyahub.workout.domain.patternLabel
 import com.vatsyahub.workout.domain.rerollOne
 import com.vatsyahub.workout.domain.roundsOf
+import com.vatsyahub.workout.domain.stepExercise
 import com.vatsyahub.workout.domain.swimPaceSeconds
 import com.vatsyahub.workout.domain.timeline
 import com.vatsyahub.workout.domain.weeklyReport
@@ -379,6 +382,39 @@ class WorkoutLogicTest {
         assertEquals(20.0, session.lines[0].sets[1].weightKg!!, 0.001)
         assertEquals(10, session.lines[1].sets[0].reps)
         assertNull(session.lines[1].sets[0].weightKg)
+    }
+
+    @Test
+    fun dragReorderFollowsTheFingerAndRenumbers() {
+        val shift = dragSteps(250f, 400f)
+        assertEquals(1, shift.steps)
+        assertEquals(-150f, shift.offset, 0.01f)
+        assertEquals(0, dragSteps(40f, 100f).steps)
+        assertEquals(40f, dragSteps(40f, 100f).offset, 0.01f)
+        val back = dragSteps(-180f, 100f)
+        assertEquals(-2, back.steps)
+        assertEquals(20f, back.offset, 0.01f)
+        assertEquals(0, dragSteps(10f, 0f).steps)
+        val moved = moveItem(listOf("Squat", "Press", "Row"), 0, 2)
+        assertEquals(listOf("Press", "Row", "Squat"), moved)
+        assertEquals(listOf(1, 2, 3), moved.indices.map { it + 1 })
+        assertEquals("Squat", moved[2])
+        assertEquals(listOf("Row", "Squat", "Press"), moveItem(listOf("Squat", "Press", "Row"), 2, 0))
+        val same = listOf("A", "B")
+        assertEquals(same, moveItem(same, 0, 0))
+        assertEquals(same, moveItem(same, -1, 0))
+        assertEquals(same, moveItem(same, 0, 4))
+    }
+
+    @Test
+    fun exerciseSwipeStopsAtTheEnds() {
+        assertEquals(1, stepExercise(0, 4, forward = true))
+        assertEquals(3, stepExercise(3, 4, forward = true))
+        assertEquals(2, stepExercise(3, 4, forward = false))
+        assertEquals(0, stepExercise(0, 4, forward = false))
+        assertEquals(0, stepExercise(0, 1, forward = true))
+        assertEquals(0, stepExercise(0, 1, forward = false))
+        assertEquals(0, stepExercise(3, 0, forward = true))
     }
 
     private fun heavy(id: Long, day: LocalDate, name: String, weight: Double, reps: Int) = Mark(
