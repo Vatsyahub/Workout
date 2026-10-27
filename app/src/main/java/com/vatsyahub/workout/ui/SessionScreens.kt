@@ -18,12 +18,15 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,10 +79,35 @@ fun StrengthScreen(model: AppModel) {
         draft.lines.forEachIndexed { lineIndex, line ->
             val exercise = snap.exercises.find { it.id == line.exerciseId }
             Panel {
+                Text("Exercise", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
+                    ) {
+                        Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
+                        val part = exercise?.bodyPart.orEmpty()
+                        if (part.isNotBlank()) {
+                            Text("Body part · $part", color = MaterialTheme.colorScheme.secondary)
+                        }
+                        if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
+                            Text("Workout type · ${line.group}", color = MaterialTheme.colorScheme.secondary)
+                        }
+                        Text("Tap the name to choose another", color = MaterialTheme.colorScheme.secondary)
+                    }
+                    IconButton(onClick = { model.rerollDraftLine(lineIndex) }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Reroll")
+                    }
+                    IconButton(onClick = { model.removeDraftLine(lineIndex) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
                 Text(
-                    exercise?.name ?: "Exercise",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.clickable { model.openPicker(Picker.StrengthSwap(lineIndex)) },
+                    "Sets",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
                 line.sets.forEachIndexed { setIndex, set ->
                     SetRow(
@@ -123,22 +151,26 @@ fun SetRow(
     onWeight: (Double?) -> Unit,
 ) {
     var removing by remember { mutableStateOf(false) }
+    Text(
+        label,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier
+            .clickable { removing = !removing }
+            .padding(top = 8.dp),
+    )
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier
-                .clickable { removing = !removing }
-                .padding(vertical = 8.dp)
-                .padding(end = 16.dp),
-        )
-        Editable(reps.toString(), reps.toString(), number = true) { text ->
-            text.toIntOrNull()?.let(onReps)
+        Column(Modifier.weight(1f)) {
+            Text("Reps", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+            Editable(reps.toString(), reps.toString(), number = true) { text ->
+                text.toIntOrNull()?.let(onReps)
+            }
         }
         if (heavy) {
-            Text("  ", modifier = Modifier.padding(horizontal = 8.dp))
-            Editable(weight?.let { formatKg(it) } ?: "kg", weight?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
-                onWeight(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("Weight", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                Editable(weight?.let { formatKg(it) } ?: "kg", weight?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
+                    onWeight(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
+                }
             }
         }
     }
@@ -276,15 +308,21 @@ fun PickerScreen(model: AppModel) {
         when (request) {
             is Picker.StrengthSwap -> {
                 val line = model.strength?.lines?.getOrNull(request.line)
-                val part = snap.exercises.find { it.id == line?.exerciseId }?.bodyPart
-                val kind = model.strength?.kind ?: "HEAVY"
-                Word("Reroll") {
-                    model.rerollDraftLine(request.line)
-                    model.back()
-                }
-                Word("Remove") { model.removeDraftLine(request.line) }
-                snap.pool(kind).filter { part == null || it.bodyPart.equals(part, true) }.forEach { exercise ->
-                    Word(exercise.name) { model.pickExercise(exercise.id) }
+                val choices = model.lineChoices(request.line)
+                val fromType = line?.groupKind == "TYPE" && line.group.isNotBlank()
+                Text(
+                    if (fromType) {
+                        "Exercises in ${line?.group}. Tap one to use it here."
+                    } else {
+                        "Any exercise in this workout. Tap one to use it here."
+                    },
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+                )
+                choices.sortedBy { it.name.lowercase() }.forEach { exercise ->
+                    Word(
+                        if (exercise.bodyPart.isBlank()) exercise.name else "${exercise.name} · ${exercise.bodyPart}",
+                    ) { model.pickExercise(exercise.id) }
                 }
             }
             is Picker.HiitSwap -> {

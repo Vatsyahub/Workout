@@ -7,7 +7,12 @@ import java.time.LocalDate
 
 data class DraftSet(val reps: Int, val weightKg: Double?)
 
-data class StrengthLine(val exerciseId: Long, val sets: List<DraftSet>)
+data class StrengthLine(
+    val exerciseId: Long,
+    val sets: List<DraftSet>,
+    val group: String = "",
+    val groupKind: String = "PART",
+)
 
 data class StrengthDraft(
     val kind: String,

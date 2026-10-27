@@ -225,36 +225,65 @@ fun BuildScreen(model: AppModel) {
         }
         return
     }
+    val byType = build.mode == "TYPE"
+    val rows = if (byType) {
+        pool.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
+    } else {
+        parts
+    }.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
     ActionPage("Build", { model.drawBuild() }) {
-        build.parts.forEachIndexed { index, part ->
+        Text(
+            "Choose what to draw, then set how many exercises. Zero skips that row.",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+        )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            ChoiceChip("Body part", !byType) { model.setBuildMode("PART") }
+            ChoiceChip("Workout type", byType) { model.setBuildMode("TYPE") }
+        }
+        if (rows.isEmpty()) {
             Panel {
-                Text("Body part", color = MaterialTheme.colorScheme.secondary)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(top = 10.dp),
-                ) {
-                    parts.forEach { name ->
-                        ChoiceChip(name, part.bodyPart.equals(name, true)) { model.choosePart(index, name) }
-                    }
-                }
-                Text("How many", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+                Text(
+                    if (byType) {
+                        "No workout types yet. Add a type on an exercise, then come back."
+                    } else {
+                        "These exercises have no body part yet."
+                    },
+                )
+            }
+        }
+        rows.forEach { name ->
+            val index = build.parts.indexOfFirst { it.bodyPart.equals(name, true) }
+            val count = build.parts.getOrNull(index)?.count ?: 0
+            Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { model.setPartCount(index, part.count - 1) }) {
-                        Icon(Icons.Filled.Remove, contentDescription = "Fewer")
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (byType) "Workout type" else "Body part",
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(name, style = MaterialTheme.typography.titleLarge)
                     }
-                    Text(part.count.toString(), style = MaterialTheme.typography.headlineSmall)
-                    IconButton(onClick = { model.setPartCount(index, part.count + 1) }) {
-                        Icon(Icons.Filled.Add, contentDescription = "More")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "Exercises",
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { if (index >= 0) model.setPartCount(index, count - 1) }) {
+                                Icon(Icons.Filled.Remove, contentDescription = "Fewer exercises")
+                            }
+                            Text(count.toString(), style = MaterialTheme.typography.headlineSmall)
+                            IconButton(onClick = { if (index >= 0) model.setPartCount(index, count + 1) }) {
+                                Icon(Icons.Filled.Add, contentDescription = "More exercises")
+                            }
+                        }
                     }
-                }
-                if (build.parts.size > 1) {
-                    QuietButton("Remove", MaterialTheme.colorScheme.error) { model.removePart(index) }
                 }
             }
         }
-        QuietButton("Another body part") { model.addPart() }
     }
 }
 
