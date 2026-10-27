@@ -134,13 +134,26 @@ fun HomeScreen(model: AppModel) {
             }
             StartCard(Icons.Filled.Terrain, "Hike", "On a trail", Modifier.weight(1f)) { model.openNamedOuting("Hike") }
         }
+        val favourites = snap.workouts.filter { it.finished && it.favourite }.sortedByDescending { it.performedAt }
+        if (favourites.isNotEmpty()) {
+            SectionLabel("Favourites")
+            favourites.forEach { workout ->
+                WorkoutCard(
+                    historyKind(workout, snap),
+                    historyDetail(workout, snap),
+                    onUnfavourite = { model.setFavourite(workout.id, false) },
+                ) { model.repeat(workout.id) }
+            }
+        }
         SectionLabel("Recent")
         if (recent.isEmpty()) {
             Text("Finished sessions show up here.", color = MaterialTheme.colorScheme.secondary)
         } else {
             recent.forEach { workout ->
                 val summary = snap.summary(workout)
-                WorkoutCard(cardTitle(summary), cardDetail(summary)) { model.open(Screen.LogDetail(workout.id)) }
+                WorkoutCard(cardTitle(summary), cardDetail(summary), favourite = workout.favourite) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
             }
         }
         QuietButton("Log a past workout") { model.open(Screen.LogType) }

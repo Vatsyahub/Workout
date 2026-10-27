@@ -25,7 +25,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -161,20 +164,62 @@ fun StartCard(
 }
 
 @Composable
-fun WorkoutCard(title: String, detail: String, onClick: () -> Unit) {
-    Column(
+fun WorkoutCard(
+    title: String,
+    detail: String,
+    favourite: Boolean = false,
+    onUnfavourite: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
-            .padding(16.dp),
+            .background(MaterialTheme.colorScheme.surface),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        if (detail.isNotBlank()) {
-            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        Column(
+            Modifier
+                .weight(1f)
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (favourite && onUnfavourite == null) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = "Favourite",
+                        modifier = Modifier.padding(start = 8.dp).size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (detail.isNotBlank()) {
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            }
         }
+        if (onUnfavourite != null) {
+            IconButton(onClick = onUnfavourite, modifier = Modifier.padding(end = 4.dp)) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = "Remove favourite",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun FavouriteMark(on: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            if (on) Icons.Filled.Star else Icons.Outlined.StarBorder,
+            contentDescription = if (on) "Remove favourite" else "Favourite",
+            tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+        )
     }
 }
 

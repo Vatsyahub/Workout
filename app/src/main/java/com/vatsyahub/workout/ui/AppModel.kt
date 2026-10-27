@@ -14,6 +14,7 @@ import com.vatsyahub.workout.data.ManualHiitSet
 import com.vatsyahub.workout.data.Profile
 import com.vatsyahub.workout.data.Snapshot
 import com.vatsyahub.workout.data.StoredCue
+import com.vatsyahub.workout.data.Workout
 import com.vatsyahub.workout.data.blockName
 import com.vatsyahub.workout.data.passesOf
 import com.vatsyahub.workout.data.pool
@@ -29,10 +30,15 @@ import com.vatsyahub.workout.domain.drawBodyPart
 import com.vatsyahub.workout.domain.drawSet
 import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.fingerprint
+import com.vatsyahub.workout.domain.LoggedLoad
+import com.vatsyahub.workout.domain.LoggedSession
+import com.vatsyahub.workout.domain.SetLoad
+import com.vatsyahub.workout.domain.repeatStrength
 import com.vatsyahub.workout.domain.rerollAll
 import com.vatsyahub.workout.domain.rerollOne
 import com.vatsyahub.workout.domain.shapeForKindName
 import com.vatsyahub.workout.domain.timeline
+import com.vatsyahub.workout.domain.withFavourite
 import java.time.LocalDate
 import kotlin.random.Random
 import kotlinx.coroutines.delay
@@ -446,21 +452,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         open(Screen.Hiit)
     }
 
-    fun again(workoutId: Long) {
+    fun setFavourite(id: Long, favourite: Boolean) {
+        val loaded = snap.value
+        val workout = loaded.workouts.find { it.id == id } ?: return
+        val next = withFavourite(loggedSession(loaded, workout), favourite)
+        launch { repo.setFavourite(next.id, next.favourite) }
+    }
+
+    fun repeat(workoutId: Long) {
         if (busy()) return
         val loaded = snap.value
         val workout = loaded.workouts.find { it.id == workoutId } ?: return
         when (workout.kind) {
             "HEAVY", "BODYWEIGHT" -> {
-                val lines = loaded.blocks.filter { it.workoutId == workoutId && it.exerciseId != null }
-                    .sortedBy { it.position }
-                    .map { block ->
-                        val sets = loaded.sets.filter { it.blockId == block.id }.sortedBy { it.position }
-                            .map { DraftSet(it.reps, it.weightKg) }
-                            .ifEmpty { List(3) { DraftSet(8, null) } }
-                        StrengthLine(block.exerciseId!!, sets)
-                    }
-                strength = StrengthDraft(workout.kind, LocalDate.now(), null, lines)
+                val plan = repeatStrength(loggedSession(loaded, workout))
+                strength = StrengthDraft(
+                    plan.kind,
+                    LocalDate.now(),
+                    plan.durationSec,
+                    plan.lines.map { line ->
+                        StrengthLine(line.exerciseId, line.sets.map { DraftSet(it.reps, it.weightKg) })
+                    },
+                )
                 open(Screen.Strength)
             }
             "HIIT" -> {
@@ -471,7 +484,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                         .sortedBy { it.position }
                         .mapNotNull { it.exerciseId }
                     val passes = loaded.passesOf(row.patternId).ifEmpty { template }
-                    freshHiitSet(passes, ids, workout.workSec ?: 25, workout.breakSec ?: 300, fingerprint(passes) == fingerprint(template))
+                    freshHiitSet(
+                        passes,
+                        ids,
+                        workout.workSec ?: 25,
+                        workout.breakSec ?: 300,
+                        fingerprint(passes) == fingerprint(template),
+                    )
                 }
                 hiit = HiitDraft(
                     LocalDate.now(),
@@ -484,8 +503,28 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 )
                 open(Screen.Hiit)
             }
-            "OUTING" -> workout.activityKindId?.let { startOuting(it) }
+            "OUTING" -> {
+                val name = loaded.kinds.find { it.id == workout.activityKindId }?.name ?: return
+                open(Screen.OutingReady(name))
+            }
         }
+    }
+
+    private fun loggedSession(loaded: Snapshot, workout: Workout): LoggedSession {
+        val lines = if (workout.kind == "HEAVY" || workout.kind == "BODYWEIGHT") {
+            loaded.blocks.filter { it.workoutId == workout.id && it.exerciseId != null }
+                .sortedBy { it.position }
+                .map { block ->
+                    val sets = loaded.sets.filter { it.blockId == block.id }
+                        .sortedBy { it.position }
+                        .map { SetLoad(it.reps, it.weightKg) }
+                        .ifEmpty { List(3) { SetLoad(8, null) } }
+                    LoggedLoad(block.exerciseId!!, sets)
+                }
+        } else {
+            emptyList()
+        }
+        return LoggedSession(workout.id, workout.kind, workout.favourite, workout.durationSec, lines)
     }
 
     fun setHiitDay(day: LocalDate) {

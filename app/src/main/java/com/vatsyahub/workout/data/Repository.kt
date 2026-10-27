@@ -235,6 +235,10 @@ class Repository(private val db: WorkoutDatabase) {
         dao.updateDuration(id, seconds)
     }
 
+    suspend fun setFavourite(id: Long, favourite: Boolean) {
+        dao.updateFavourite(id, favourite)
+    }
+
     suspend fun updateDay(id: Long, day: LocalDate) {
         val current = dao.workouts().find { it.id == id } ?: return
         val time = java.time.Instant.ofEpochMilli(current.performedAt).atZone(zone).toLocalTime()

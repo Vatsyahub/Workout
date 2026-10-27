@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -49,14 +50,14 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private fun historyKind(workout: Workout, snap: Snapshot): String = when (workout.kind) {
+internal fun historyKind(workout: Workout, snap: Snapshot): String = when (workout.kind) {
     "HEAVY" -> "Heavy"
     "HIIT" -> "HIIT"
     "OUTING" -> snap.kinds.find { it.id == workout.activityKindId }?.name ?: "Outing"
     else -> "Bodyweight"
 }
 
-private fun historyDetail(workout: Workout, snap: Snapshot): String {
+internal fun historyDetail(workout: Workout, snap: Snapshot): String {
     val day = dayText(localDay(workout.performedAt))
     return when (workout.kind) {
         "HIIT" -> {
@@ -138,7 +139,7 @@ fun LogsScreen(model: AppModel) {
                 }
             }
             items(week, key = { it.id }) { workout ->
-                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap)) {
+                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap), favourite = workout.favourite) {
                     model.open(Screen.LogDetail(workout.id))
                 }
             }
@@ -175,7 +176,7 @@ fun MonthScreen(model: AppModel, year: Int, month: Int) {
                 }
             }
             items(logs, key = { it.id }) { workout ->
-                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap)) {
+                WorkoutCard(historyKind(workout, snap), historyDetail(workout, snap), favourite = workout.favourite) {
                     model.open(Screen.LogDetail(workout.id))
                 }
             }
@@ -203,7 +204,14 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
     val reps = blocks.sumOf { block -> snap.sets.filter { it.blockId == block.id }.sumOf { it.reps } }
     Page {
         Panel {
-            Text(if (heavy) "Heavy" else "Bodyweight", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (heavy) "Heavy" else "Bodyweight",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                FavouriteMark(workout.favourite) { model.setFavourite(workout.id, !workout.favourite) }
+            }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 StatTile("Date", dayText(localDay(workout.performedAt)), Modifier.weight(1f), chooseDate)
                 StatTile("Exercises", blocks.size.toString(), Modifier.weight(1f))
@@ -265,7 +273,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
         QuietButton("Delete", MaterialTheme.colorScheme.error) { model.deleteWorkout(workout.id) }
-        QuietButton("Start again") { model.again(workout.id) }
+        QuietButton("Repeat") { model.repeat(workout.id) }
     }
 }
 
@@ -278,7 +286,10 @@ private fun HiitLog(model: AppModel, workout: Workout) {
     val pattern = if (labels.size == 1) labels.first() else "Mixed"
     Page {
         Panel {
-            Text("HIIT", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("HIIT", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                FavouriteMark(workout.favourite) { model.setFavourite(workout.id, !workout.favourite) }
+            }
             StatTile("Date", dayText(localDay(workout.performedAt)), Modifier.fillMaxWidth(), chooseDate)
             StatTile("Pattern", pattern, Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth()) {
@@ -388,7 +399,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
             }
         }
         QuietButton("Delete", MaterialTheme.colorScheme.error) { model.deleteWorkout(workout.id) }
-        QuietButton("Start again") { model.again(workout.id) }
+        QuietButton("Repeat") { model.repeat(workout.id) }
     }
 }
 
@@ -414,7 +425,10 @@ private fun OutingLog(model: AppModel, workout: Workout) {
     val chooseDate = pickDate(localDay(workout.performedAt)) { model.changeDay(workout.id, it) }
     Page {
         Panel {
-            Text(kind?.name ?: "Outing", style = MaterialTheme.typography.titleLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(kind?.name ?: "Outing", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                FavouriteMark(workout.favourite) { model.setFavourite(workout.id, !workout.favourite) }
+            }
             StatTile("Date", dayText(localDay(workout.performedAt)), Modifier.fillMaxWidth(), chooseDate)
         }
         Panel {
@@ -456,7 +470,7 @@ private fun OutingLog(model: AppModel, workout: Workout) {
         }
         if (kind?.shape == "CUSTOM") QuietButton("Add field") { naming = true }
         QuietButton("Delete", MaterialTheme.colorScheme.error) { model.deleteWorkout(workout.id) }
-        QuietButton("Start again") { model.again(workout.id) }
+        QuietButton("Repeat") { model.repeat(workout.id) }
     }
 }
 

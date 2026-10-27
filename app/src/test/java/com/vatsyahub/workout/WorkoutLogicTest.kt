@@ -14,8 +14,12 @@ import com.vatsyahub.workout.domain.expand
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.formatKm
 import com.vatsyahub.workout.domain.formatPace
+import com.vatsyahub.workout.domain.LoggedLoad
+import com.vatsyahub.workout.domain.LoggedSession
 import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.kmPaceSeconds
+import com.vatsyahub.workout.domain.repeatStrength
+import com.vatsyahub.workout.domain.withFavourite
 import com.vatsyahub.workout.domain.parseDistanceToMeters
 import com.vatsyahub.workout.domain.parseDuration
 import com.vatsyahub.workout.domain.patternLabel
@@ -210,6 +214,66 @@ class WorkoutLogicTest {
         assertEquals("2 × 8", formatSets(listOf(SetLoad(8, null), SetLoad(8, null)), showWeight = true))
         assertEquals("1 × 8", formatSets(listOf(SetLoad(8, 20.0)), showWeight = false))
         assertEquals("", formatSets(emptyList(), showWeight = true))
+    }
+
+    @Test
+    fun starringDoesNotAlterSets() {
+        val session = LoggedSession(
+            id = 4,
+            kind = "HEAVY",
+            favourite = false,
+            durationSec = 45 * 60,
+            lines = listOf(
+                LoggedLoad(7, listOf(SetLoad(8, 20.0), SetLoad(6, 22.5))),
+                LoggedLoad(8, listOf(SetLoad(10, null))),
+            ),
+        )
+        val starred = withFavourite(session, true)
+        assertEquals(true, starred.favourite)
+        assertEquals(4L, starred.id)
+        assertEquals(45 * 60, starred.durationSec)
+        assertEquals(8, starred.lines[0].sets[0].reps)
+        assertEquals(20.0, starred.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(6, starred.lines[0].sets[1].reps)
+        assertEquals(22.5, starred.lines[0].sets[1].weightKg!!, 0.001)
+        assertEquals(10, starred.lines[1].sets[0].reps)
+        assertNull(starred.lines[1].sets[0].weightKg)
+        assertEquals(false, session.favourite)
+        assertEquals(8, session.lines[0].sets[0].reps)
+        assertEquals(20.0, session.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(10, session.lines[1].sets[0].reps)
+        assertNull(session.lines[1].sets[0].weightKg)
+    }
+
+    @Test
+    fun repeatCopiesLoadsIntoANewDraft() {
+        val session = LoggedSession(
+            id = 11,
+            kind = "HEAVY",
+            favourite = true,
+            durationSec = 30 * 60,
+            lines = listOf(
+                LoggedLoad(3, listOf(SetLoad(8, 20.0), SetLoad(8, 20.0), SetLoad(6, 22.5))),
+                LoggedLoad(5, listOf(SetLoad(12, 16.0))),
+            ),
+        )
+        val draft = repeatStrength(session)
+        assertEquals("HEAVY", draft.kind)
+        assertNull(draft.durationSec)
+        assertEquals(3L, draft.lines[0].exerciseId)
+        assertEquals(listOf(8, 8, 6), draft.lines[0].sets.map { it.reps })
+        assertEquals(20.0, draft.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(20.0, draft.lines[0].sets[1].weightKg!!, 0.001)
+        assertEquals(22.5, draft.lines[0].sets[2].weightKg!!, 0.001)
+        assertEquals(5L, draft.lines[1].exerciseId)
+        assertEquals(12, draft.lines[1].sets.single().reps)
+        assertEquals(16.0, draft.lines[1].sets.single().weightKg!!, 0.001)
+        assertEquals(11L, session.id)
+        assertEquals(true, session.favourite)
+        assertEquals(30 * 60, session.durationSec)
+        assertEquals(listOf(8, 8, 6), session.lines[0].sets.map { it.reps })
+        assertEquals(20.0, session.lines[0].sets[0].weightKg!!, 0.001)
+        assertEquals(16.0, session.lines[1].sets[0].weightKg!!, 0.001)
     }
 
     private fun heavy(id: Long, day: LocalDate, name: String, weight: Double, reps: Int) = Mark(

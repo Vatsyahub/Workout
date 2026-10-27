@@ -1,5 +1,6 @@
 package com.vatsyahub.workout.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -92,6 +93,7 @@ data class Workout(
     val bottomM: Double? = null,
     val topM: Double? = null,
     val bothWays: Boolean? = null,
+    @ColumnInfo(defaultValue = "0") val favourite: Boolean = false,
 )
 
 @Serializable

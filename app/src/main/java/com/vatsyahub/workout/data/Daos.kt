@@ -129,6 +129,9 @@ interface WorkoutDao {
     @Query("UPDATE workouts SET finished = :finished WHERE id = :id")
     suspend fun updateFinished(id: Long, finished: Boolean)
 
+    @Query("UPDATE workouts SET favourite = :favourite WHERE id = :id")
+    suspend fun updateFavourite(id: Long, favourite: Boolean)
+
     @Query("DELETE FROM workouts WHERE id = :id")
     suspend fun deleteWorkout(id: Long)
 
