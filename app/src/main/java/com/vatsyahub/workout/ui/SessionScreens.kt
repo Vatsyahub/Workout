@@ -69,8 +69,31 @@ fun StrengthScreen(model: AppModel) {
     val draft = model.strength ?: return
     val heavy = draft.kind == "HEAVY"
     val chooseDate = pickDate(draft.day) { model.setDraftDay(it) }
+    val exerciseCount = draft.lines.size
+    val totalReps = draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }
     ActionPage("Finish", { model.saveStrength() }) {
-        QuietButton(dayText(draft.day)) { chooseDate() }
+        Panel {
+            Text(if (heavy) "Heavy" else "Bodyweight", style = MaterialTheme.typography.titleLarge)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                StatTile("Date", dayText(draft.day), Modifier.weight(1f), chooseDate)
+                StatTile("Exercises", exerciseCount.toString(), Modifier.weight(1f))
+                StatTile("Reps", totalReps.toString(), Modifier.weight(1f))
+            }
+            Text(
+                "Time",
+                color = MaterialTheme.colorScheme.secondary,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Editable(
+                draft.durationSec?.let { formatDuration(it) } ?: "Add a time",
+                durationRaw(draft.durationSec),
+                style = MaterialTheme.typography.titleLarge,
+                number = true,
+            ) { text ->
+                model.setDraftDuration(parseDuration(text, true))
+            }
+        }
         if (draft.lines.isEmpty()) {
             Panel {
                 Text("Add the exercises in this session.")
@@ -88,11 +111,23 @@ fun StrengthScreen(model: AppModel) {
                     ) {
                         Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "Body part · ${exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None"}",
+                            "Body part",
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Text(
+                            exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
                             color = MaterialTheme.colorScheme.secondary,
                         )
                         if (line.groupKind == "TYPE" && line.group.isNotBlank()) {
-                            Text("Workout type · ${line.group}", color = MaterialTheme.colorScheme.secondary)
+                            Text(
+                                "Workout type",
+                                color = MaterialTheme.colorScheme.secondary,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            Text(line.group, color = MaterialTheme.colorScheme.secondary)
                         }
                         Text("Tap the name to choose a replacement", color = MaterialTheme.colorScheme.secondary)
                     }
@@ -103,12 +138,7 @@ fun StrengthScreen(model: AppModel) {
                         Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                Text(
-                    "Sets",
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+                SetTableHeader(heavy)
                 line.sets.forEachIndexed { setIndex, set ->
                     SetRow(
                         label = "Set ${setIndex + 1}",
@@ -124,18 +154,6 @@ fun StrengthScreen(model: AppModel) {
             }
         }
         QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
-        Text(
-            "${draft.lines.size} exercises · ${draft.lines.sumOf { line -> line.sets.sumOf { it.reps } }} reps",
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-        Editable(
-            draft.durationSec?.let { formatDuration(it) } ?: "Time",
-            durationRaw(draft.durationSec),
-            number = true,
-        ) { text ->
-            model.setDraftDuration(parseDuration(text, true))
-        }
         QuietButton("Reroll all") { model.rerollDraftAll() }
     }
 }
@@ -151,24 +169,37 @@ fun SetRow(
     onWeight: (Double?) -> Unit,
 ) {
     var removing by remember { mutableStateOf(false) }
-    Text(
-        label,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier
-            .clickable { removing = !removing }
-            .padding(top = 8.dp),
-    )
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Reps", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-            Editable(reps.toString(), reps.toString(), number = true) { text ->
+    val number = label.substringAfterLast(' ').ifBlank { label }
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            number,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .weight(0.7f)
+                .clickable { removing = !removing }
+                .padding(vertical = 8.dp),
+        )
+        Box(Modifier.weight(1f)) {
+            Editable(
+                reps.toString(),
+                reps.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                number = true,
+            ) { text ->
                 text.toIntOrNull()?.let(onReps)
             }
         }
         if (heavy) {
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("Weight", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                Editable(weight?.let { formatKg(it) } ?: "kg", weight?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
+            Box(Modifier.weight(1.1f)) {
+                Editable(
+                    weight?.let { formatKg(it) } ?: "kg",
+                    weight?.let { trimNumber(it) }.orEmpty(),
+                    style = MaterialTheme.typography.titleMedium,
+                    number = true,
+                ) { text ->
                     onWeight(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
                 }
             }
@@ -186,53 +217,74 @@ fun HiitScreen(model: AppModel) {
     val shared = draft.sets.all { it.shared }
     val chooseDate = pickDate(draft.day) { model.setHiitDay(it) }
     val action = if (draft.manual) "Save" else "Start"
+    val patternName = if (shared) patternLabel(draft.template) else "Mixed"
+    val roundCount = if (shared) roundsOf(draft.template).toString() else "Mixed"
     ActionPage(action, { if (draft.manual) model.saveManualHiit() else model.startClock() }) {
-        QuietButton(dayText(draft.day)) { chooseDate() }
-        val rounds = if (shared) "${roundsOf(draft.template)} rounds" else null
-        val label = if (shared) patternLabel(draft.template) else "Mixed"
         Panel {
-            Text("Pattern", color = MaterialTheme.colorScheme.secondary)
-            Text(
-                if (rounds == null) label else "$label · $rounds",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .clickable { model.openPatterns(null) },
-            )
-            Text("Work", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
-            Editable("${draft.workSec} s", draft.workSec.toString(), number = true) { text ->
-                text.toIntOrNull()?.let { model.setWork(it) }
-            }
-            Text("Rest", color = MaterialTheme.colorScheme.secondary)
-            Editable("${draft.restSec} s", draft.restSec.toString(), number = true) { text ->
-                text.toIntOrNull()?.let { model.setRest(it) }
-            }
-            Text("Break", color = MaterialTheme.colorScheme.secondary)
-            Editable(formatBreak(draft.breakSec), durationRaw(draft.breakSec), number = true) { text ->
-                parseDuration(text, true)?.let { model.setBreak(it) }
+            Text("HIIT", style = MaterialTheme.typography.titleLarge)
+            StatTile("Date", dayText(draft.day), Modifier.fillMaxWidth(), chooseDate)
+            StatTile("Pattern", patternName, Modifier.fillMaxWidth()) { model.openPatterns(null) }
+            StatTile("Rounds", roundCount, Modifier.fillMaxWidth())
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Work", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                    Editable("${draft.workSec} s", draft.workSec.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
+                        text.toIntOrNull()?.let { model.setWork(it) }
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Text("Rest", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                    Editable("${draft.restSec} s", draft.restSec.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
+                        text.toIntOrNull()?.let { model.setRest(it) }
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Text("Break", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+                    Editable(formatBreak(draft.breakSec), durationRaw(draft.breakSec), style = MaterialTheme.typography.titleMedium, number = true) { text ->
+                        parseDuration(text, true)?.let { model.setBreak(it) }
+                    }
+                }
             }
         }
         draft.sets.forEachIndexed { setIndex, set ->
             Panel {
                 Text(
                     "Set ${setIndex + 1}",
-                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.clickable { model.open(Screen.SetMenu(setIndex)) },
                 )
-                Text("Exercises", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 6.dp))
-                Editable(set.exerciseIds.size.toString(), set.exerciseIds.size.toString(), number = true) { text ->
+                Text(
+                    "Exercises",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Editable(
+                    set.exerciseIds.size.toString(),
+                    set.exerciseIds.size.toString(),
+                    style = MaterialTheme.typography.titleLarge,
+                    number = true,
+                ) { text ->
                     text.toIntOrNull()?.let { model.setHiitCount(setIndex, it) }
                 }
+                if (set.exerciseIds.isEmpty()) {
+                    Text("No exercises in this set.", color = MaterialTheme.colorScheme.secondary)
+                }
                 set.exerciseIds.forEachIndexed { line, id ->
-                    val name = snap.exercises.find { it.id == id }?.name ?: "Exercise"
-                    Text(
-                        name,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier
+                    val exercise = snap.exercises.find { it.id == id }
+                    Column(
+                        Modifier
                             .fillMaxWidth()
                             .clickable { model.openPicker(Picker.HiitSwap(setIndex, line)) }
                             .padding(vertical = 6.dp),
-                    )
+                    ) {
+                        Text(exercise?.name ?: "Exercise", style = MaterialTheme.typography.titleMedium)
+                        val part = exercise?.bodyPart.orEmpty()
+                        if (part.isNotBlank()) {
+                            Text(part, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
                 }
                 if (draft.manual) {
                     val slots = expand(set.exerciseIds.size, set.passes)
@@ -240,7 +292,13 @@ fun HiitScreen(model: AppModel) {
                         val id = set.exerciseIds.getOrNull(slot)
                         val name = snap.exercises.find { it.id == id }?.name ?: "Exercise"
                         val seconds = set.splitSeconds.getOrElse(bout) { draft.workSec }
-                        Editable("$name $seconds s", seconds.toString(), number = true) { text ->
+                        Text(
+                            name,
+                            color = MaterialTheme.colorScheme.secondary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Editable("$seconds s", seconds.toString(), style = MaterialTheme.typography.titleMedium, number = true) { text ->
                             text.toIntOrNull()?.let { model.setBoutSeconds(setIndex, bout, it) }
                         }
                     }
@@ -321,8 +379,9 @@ fun PickerScreen(model: AppModel) {
                 model.lineChoices(request.line)
                     .sortedWith(compareBy({ it.name.lowercase() }, { it.bodyPart.lowercase() }))
                     .forEach { exercise ->
-                        Word(
-                            if (exercise.bodyPart.isBlank()) exercise.name else "${exercise.name} · ${exercise.bodyPart}",
+                        WorkoutCard(
+                            exercise.name,
+                            if (exercise.bodyPart.isBlank()) "No body part" else exercise.bodyPart,
                         ) { model.pickExercise(exercise.id) }
                     }
             }
@@ -563,10 +622,20 @@ fun OutingFields(
     onWays: (Boolean) -> Unit,
     onExtra: (Long, String) -> Unit,
 ) {
-    Editable(distanceM?.let { formatKm(it) } ?: "Distance", distanceM?.let { trimNumber(it / 1000.0) }.orEmpty(), number = true) { text ->
+    LabeledEdit(
+        "Distance",
+        distanceM?.let { formatKm(it) } ?: "Add distance",
+        distanceM?.let { trimNumber(it / 1000.0) }.orEmpty(),
+        number = true,
+    ) { text ->
         onDistance(text.trim().ifEmpty { null }?.let { parseDistanceToMeters(it) })
     }
-    Editable(durationSec?.let { formatDuration(it) } ?: "Time", durationRaw(durationSec), number = true) { text ->
+    LabeledEdit(
+        "Time",
+        durationSec?.let { formatDuration(it) } ?: "Add a time",
+        durationRaw(durationSec),
+        number = true,
+    ) { text ->
         onDuration(text.trim().ifEmpty { null }?.let { parseDuration(it, true) })
     }
     val pace = if (distanceM != null && durationSec != null) {
@@ -575,34 +644,76 @@ fun OutingFields(
         null
     }
     if (pace != null) {
-        Line(formatPace(pace) + if (shape == "SWIM") " /100 m" else " /km")
+        StatTile("Pace", formatPace(pace) + if (shape == "SWIM") " /100 m" else " /km")
     }
     if (shape == "RUN") {
-        Editable(gradient?.let { "Gradient ${trimNumber(it)}" } ?: "Gradient", gradient?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
+        LabeledEdit(
+            "Gradient",
+            gradient?.let { trimNumber(it) } ?: "Add gradient",
+            gradient?.let { trimNumber(it) }.orEmpty(),
+            number = true,
+        ) { text ->
             onGradient(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
         }
     }
     if (shape == "HIKE") {
-        Editable(bottomM?.let { "Bottom ${formatMetres(it)}" } ?: "Bottom", bottomM?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
+        LabeledEdit(
+            "Bottom",
+            bottomM?.let { formatMetres(it) } ?: "Add the bottom",
+            bottomM?.let { trimNumber(it) }.orEmpty(),
+            number = true,
+        ) { text ->
             onBottom(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
         }
-        Editable(topM?.let { "Top ${formatMetres(it)}" } ?: "Top", topM?.let { trimNumber(it) }.orEmpty(), number = true) { text ->
+        LabeledEdit(
+            "Top",
+            topM?.let { formatMetres(it) } ?: "Add the top",
+            topM?.let { trimNumber(it) }.orEmpty(),
+            number = true,
+        ) { text ->
             onTop(text.trim().ifEmpty { null }?.let { parseDecimal(it) })
         }
         if (bottomM != null && topM != null) {
             val climb = climbMetres(bottomM, topM)
-            Line("Climb ${formatMetres(climb)}")
-            if (bothWays == true) Line("Covered ${formatMetres(coveredMetres(climb, true))}")
+            StatTile("Climb", formatMetres(climb))
+            if (bothWays == true) StatTile("Covered", formatMetres(coveredMetres(climb, true)))
         }
-        Word(if (bothWays == true) "Both ways" else "One way") { onWays(bothWays != true) }
+        Text(
+            "Way",
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        Row(Modifier.padding(top = 6.dp)) {
+            ChoiceChip("One way", bothWays != true) { if (bothWays == true) onWays(false) }
+            ChoiceChip("Both ways", bothWays == true) { if (bothWays != true) onWays(true) }
+        }
     }
     if (shape == "RUN" || shape == "HIKE") {
-        Editable(location?.takeIf { it.isNotBlank() } ?: "Location", location.orEmpty()) { text ->
+        LabeledEdit(
+            "Location",
+            location?.takeIf { it.isNotBlank() } ?: "Add a place",
+            location.orEmpty(),
+        ) { text ->
             onLocation(text.trim().ifEmpty { null })
         }
     }
     extras.forEach { (id, name, value) ->
-        Editable(value.ifBlank { name }, value) { onExtra(id, it) }
+        LabeledEdit(name, value.ifBlank { "Add $name" }, value) { onExtra(id, it) }
+    }
+}
+
+@Composable
+private fun LabeledEdit(
+    label: String,
+    shown: String,
+    raw: String,
+    number: Boolean = false,
+    onCommit: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+        Editable(shown, raw, style = MaterialTheme.typography.titleLarge, number = number, onCommit = onCommit)
     }
 }
 

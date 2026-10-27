@@ -224,13 +224,18 @@ fun BuildScreen(model: AppModel) {
         }
         return
     }
-    ActionPage("Build", { model.drawBuild() }) {
-        val byType = build.mode == "TYPE"
+    val byType = build.mode == "TYPE"
+    val chosen = build.parts.filter { it.count > 0 }
+    val total = chosen.sumOf { it.count }
+    ActionPage("Build", {
+        if (total < 1) return@ActionPage
+        model.drawBuild()
+    }) {
         Text(
             if (byType) {
-                "Choose how many exercises per workout type. 0 skips that type."
+                "Tap Build to draw exercises of each workout type you set above zero."
             } else {
-                "Choose how many exercises per body part. 0 skips that part."
+                "Tap Build to draw exercises from each body part you set above zero."
             },
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
@@ -278,6 +283,19 @@ fun BuildScreen(model: AppModel) {
                         }
                     }
                 }
+            }
+        }
+        Panel {
+            if (total < 1) {
+                Text("Set at least one count", style = MaterialTheme.typography.titleMedium)
+            } else {
+                val noun = if (total == 1) "exercise" else "exercises"
+                Text("You are building $total $noun", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    chosen.joinToString(", ") { it.bodyPart },
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
             }
         }
     }
@@ -588,9 +606,20 @@ fun CarryScreen(model: AppModel) {
 @Composable
 fun ReportsScreen(model: AppModel) {
     Page {
-        Word("Weekly") { model.open(Screen.Weekly) }
-        Word("Exercise") { model.open(Screen.ReportExercises) }
-        Word("Bests") { model.open(Screen.Bests) }
+        Text(
+            "Pick a report.",
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+        )
+        WorkoutCard("This week", "Workouts this week, and what changed since last week.") {
+            model.open(Screen.Weekly)
+        }
+        WorkoutCard("One exercise", "Every recent session for a single exercise.") {
+            model.open(Screen.ReportExercises)
+        }
+        WorkoutCard("Bests", "Best weight, reps, time, distance, and pace.") {
+            model.open(Screen.Bests)
+        }
     }
 }
 

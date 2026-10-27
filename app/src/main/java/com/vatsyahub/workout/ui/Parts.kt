@@ -179,6 +179,54 @@ fun WorkoutCard(title: String, detail: String, onClick: () -> Unit) {
 }
 
 @Composable
+fun StatTile(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    Column(
+        modifier
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
+        Text(value, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+@Composable
+fun SetTableHeader(showWeight: Boolean) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Set",
+            modifier = Modifier.weight(0.7f),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Text(
+            "Reps",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        if (showWeight) {
+            Text(
+                "Weight",
+                modifier = Modifier.weight(1.1f),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+    }
+}
+
+@Composable
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier
