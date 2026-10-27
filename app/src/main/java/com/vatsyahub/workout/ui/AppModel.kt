@@ -139,7 +139,7 @@ data class ResolvedCue(
 
 class AppModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as WorkoutApp).repository
-    private val tones = Tones()
+    private val tones = Tones(app)
     private val gate = Mutex()
 
     val snap = repo.data().stateIn(viewModelScope, SharingStarted.Eagerly, Snapshot())
