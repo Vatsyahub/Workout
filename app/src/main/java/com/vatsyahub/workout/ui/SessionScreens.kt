@@ -142,6 +142,7 @@ fun StrengthScreen(model: AppModel) {
                 StatTile("Reps", totalReps.toString(), Modifier.weight(1f))
             }
         }
+        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (draft.lines.isEmpty()) {
             Panel {
                 Text("Add the exercises in this session.")
@@ -196,7 +197,7 @@ fun StrengthScreen(model: AppModel) {
                 }
             }
         }
-        QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
+        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (!editing && !handPicked) QuietButton("Reroll all") { model.rerollDraftAll() }
         if (!draft.logging && draft.editingPlanId == null && draft.lines.isNotEmpty()) {
             QuietButton("Save as Plan") { model.saveStrengthAsPlan() }
@@ -488,6 +489,7 @@ fun HiitScreen(model: AppModel) {
                         exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
                     ) { model.openPicker(Picker.HiitSwap(setIndex, line)) }
                 }
+                SoftButton("Add exercise") { model.openPicker(Picker.AddHiit(setIndex, null)) }
                 if (draft.manual) {
                     val slots = expand(set.exerciseIds.size, set.passes)
                     slots.forEachIndexed { bout, slot ->
@@ -627,6 +629,7 @@ fun PickerScreen(model: AppModel) {
                 }
             }
             is Picker.AddStrength -> {
+                SoftButton("Add exercise") { model.open(Screen.AddExercise) }
                 val draft = model.strength
                 val kind = if (request.workoutId == null) {
                     draft?.kind ?: "HEAVY"
@@ -661,6 +664,7 @@ fun PickerScreen(model: AppModel) {
                     }
             }
             is Picker.AddHiit -> {
+                SoftButton("Add exercise") { model.open(Screen.AddExercise) }
                 snap.pool("HIIT").forEach { exercise ->
                     CompactRow(
                         exercise.name,

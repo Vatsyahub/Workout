@@ -300,6 +300,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 model.changeDuration(workout.id, text.trim().ifEmpty { null }?.let { parseDuration(it, true) })
             }
         }
+        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
         if (blocks.isEmpty()) {
             Panel { Text("No exercises in this session.") }
         }
@@ -329,7 +330,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 }
             }
         }
-        QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
+        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
         QuietButton("Delete", MaterialTheme.colorScheme.error) { model.deleteWorkout(workout.id) }
         QuietButton("Repeat") { model.repeat(workout.id) }
     }
@@ -420,7 +421,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
                         QuietButton("Remove") { removing = true }
                     }
                 }
-                QuietButton("Add exercise") { model.openPicker(Picker.AddHiit(setIndex, workout.id)) }
+                SoftButton("Add exercise") { model.openPicker(Picker.AddHiit(setIndex, workout.id)) }
                 val splits = snap.splits.filter { it.workoutId == workout.id && it.setIndex == setIndex && it.phase != "REST" }
                     .sortedBy { it.position }
                 if (splits.isNotEmpty()) {

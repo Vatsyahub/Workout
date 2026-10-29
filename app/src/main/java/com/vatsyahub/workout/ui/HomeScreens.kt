@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -64,9 +64,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vatsyahub.workout.data.Exercise
 import com.vatsyahub.workout.data.localDay
+import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.data.summary
 import com.vatsyahub.workout.data.typesOf
+import com.vatsyahub.workout.domain.PickCandidate
 import com.vatsyahub.workout.domain.PlanBody
 import com.vatsyahub.workout.domain.SearchExercise
 import com.vatsyahub.workout.domain.SearchFilters
@@ -74,6 +76,7 @@ import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.classifyPickedKind
 import com.vatsyahub.workout.domain.decodePlan
 import com.vatsyahub.workout.domain.filterExercises
+import com.vatsyahub.workout.domain.matchExercises
 import com.vatsyahub.workout.domain.planDetail
 import com.vatsyahub.workout.domain.planTitle
 import com.vatsyahub.workout.domain.formatSets
@@ -281,10 +284,9 @@ fun LogTypeScreen(model: AppModel) {
 fun BuildScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val build = model.build
-    var query by remember { mutableStateOf("") }
     val library = snap.strengthLibrary()
     if (library.isEmpty()) {
-        ActionPage("Add exercise", { model.tab(Screen.Exercises) }) {
+        ActionPage("Add exercise", { model.open(Screen.AddExercise) }) {
             Panel {
                 Text("Add exercises before a workout can be drawn.")
                 Text(
@@ -296,121 +298,209 @@ fun BuildScreen(model: AppModel) {
         }
         return
     }
-    val partNames = library.flatMap { musclesOf(it.bodyPart) }
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
-        .sortedBy { it.lowercase() }
-    val typeNames = library.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
-        .sortedBy { it.lowercase() }
-    val results = filterExercises(
-        library.map { exercise ->
-            SearchExercise(
-                exercise.id,
-                exercise.name,
-                exercise.bodyPart,
-                snap.typesOf(exercise.id).map { it.name },
-            )
-        },
-        SearchFilters(query, build.bodyPart, build.workoutType),
-    )
+    LaunchedEffect(build.mode) {
+        if (build.mode != "PART" && build.mode != "TYPE" && build.mode != "PICK") {
+            model.setBuildMode("PART")
+        }
+    }
+    val picking = build.mode == "PICK"
+    val byType = build.mode == "TYPE"
+    val pool = snap.pool(build.kind)
+    var query by remember { mutableStateOf("") }
+    val matches = matchExercises(library.map { PickCandidate(it.id, it.name, it.usage) }, query)
     val pickedKind = classifyPickedKind(
         build.picks.map { line -> snap.exercises.find { it.id == line.exerciseId }?.usage.orEmpty() },
         build.kind,
     )
-    val canStart = build.picks.isNotEmpty()
-    val canDraw = build.drawCount > 0
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+    ActionPage(
+        if (picking) "Save and start workout" else "Build",
+        {
+            if (picking) {
+                if (build.picks.isEmpty()) return@ActionPage
+                model.openPicked()
+            } else {
+                val total = build.parts.sumOf { it.count }
+                if (total < 1) return@ActionPage
+                model.drawBuild()
+            }
+        },
+        showAction = !picking || build.picks.isNotEmpty(),
     ) {
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 12.dp),
-        ) {
-            Field("Exercise name", query) { query = it }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Field("Search", query) { query = it }
+        SoftButton("Add exercise") { model.open(Screen.AddExercise) }
+        if (query.isNotBlank() && matches.isEmpty()) {
+            Text(
+                "No exercises match.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        matches.forEach { candidate ->
+            val exercise = library.find { it.id == candidate.id } ?: return@forEach
+            CompactRow(
+                exercise.name,
+                exercise.bodyPart.ifBlank { "None" },
+                previewSetLine(snap, exercise, previewKind(exercise.usage, build.kind)),
             ) {
-                FilterMenu("Body part", build.bodyPart, partNames, Modifier.weight(1f)) { model.setBuildBodyPart(it) }
-                FilterMenu("Workout type", build.workoutType, typeNames, Modifier.weight(1f)) { model.setBuildType(it) }
+                model.addPicked(candidate.id)
+                query = ""
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Count", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = { model.setDrawCount(build.drawCount - 1) }) {
-                    Icon(Icons.Filled.Remove, contentDescription = "Fewer exercises")
+        }
+        if (!picking && pool.isNotEmpty()) {
+            Panel {
+                if (byType) {
+                    Text("Workout type", style = MaterialTheme.typography.titleLarge)
                 }
-                Text(build.drawCount.toString(), style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = { model.setDrawCount(build.drawCount + 1) }) {
-                    Icon(Icons.Filled.Add, contentDescription = "More exercises")
-                }
-            }
-            if (build.picks.isNotEmpty()) {
                 Text(
-                    "This workout",
-                    style = MaterialTheme.typography.titleSmall,
+                    if (byType) {
+                        "Tap Build to draw exercises of each workout type you set above zero."
+                    } else {
+                        "Tap Build to draw exercises for each muscle you set above zero."
+                    },
                     color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                    modifier = Modifier.padding(top = if (byType) 4.dp else 0.dp),
                 )
-                ReorderColumn(
-                    items = build.picks,
-                    keyOf = { it.key },
-                    onMove = { from, to -> model.movePicked(from, to) },
-                ) { index, line, _, _, handle ->
-                    val exercise = snap.exercises.find { it.id == line.exerciseId }
-                    PickedExerciseCard(
-                        line = line,
-                        exercise = exercise,
-                        showWeight = showsWeight(pickedKind, exercise?.usage),
-                        onName = { model.openPicker(Picker.PickSwap(index)) },
-                        onRemove = { model.removePicked(index) },
-                        onSave = { model.replacePickedSets(index, it) },
-                        handle = handle,
+            }
+        }
+        if (byType) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                ChoiceChip("Workout type", true) { model.setBuildMode("TYPE") }
+                ChoiceChip("Pick exercises", false) { model.setBuildMode("PICK") }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                ChoiceChip("Body part", build.mode == "PART") { model.setBuildMode("PART") }
+                ChoiceChip("Pick exercises", picking) { model.setBuildMode("PICK") }
+            }
+        }
+        if (picking) {
+            Text(
+                "A workout can mix heavy and bodyweight exercises.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            if (build.picks.isEmpty()) {
+                Panel {
+                    Text("Add at least one exercise", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            ReorderColumn(
+                items = build.picks,
+                keyOf = { it.key },
+                onMove = { from, to -> model.movePicked(from, to) },
+            ) { index, line, _, _, handle ->
+                val exercise = snap.exercises.find { it.id == line.exerciseId }
+                PickedExerciseCard(
+                    line = line,
+                    exercise = exercise,
+                    showWeight = showsWeight(pickedKind, exercise?.usage),
+                    onName = { model.openPicker(Picker.PickSwap(index)) },
+                    onRemove = { model.removePicked(index) },
+                    onSave = { model.replacePickedSets(index, it) },
+                    handle = handle,
+                )
+            }
+        } else if (pool.isEmpty()) {
+            Panel {
+                Text("Add exercises before a workout can be drawn.")
+                Text(
+                    "Heavy only uses heavy exercises. Bodyweight uses bodyweight exercises.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        } else {
+            val chosen = build.parts.filter { it.count > 0 }
+            val total = chosen.sumOf { it.count }
+            if (build.parts.isEmpty()) {
+                Panel {
+                    Text(
+                        if (byType) {
+                            "No workout types yet. Add a type on an exercise, then come back."
+                        } else {
+                            "These exercises have no muscles yet."
+                        },
                     )
                 }
             }
-            if (results.isEmpty()) {
-                Text(
-                    "No exercises match.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            build.parts.forEachIndexed { index, part ->
+                Panel {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(if (byType) Icons.Filled.Timer else Icons.Filled.AccessibilityNew)
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            if (byType) {
+                                Text(
+                                    "Workout type",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                            Text(part.bodyPart, style = MaterialTheme.typography.titleLarge)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "Exercises",
+                                color = MaterialTheme.colorScheme.secondary,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { model.setPartCount(index, part.count - 1) }) {
+                                    Icon(Icons.Filled.Remove, contentDescription = "Fewer exercises")
+                                }
+                                Text(part.count.toString(), style = MaterialTheme.typography.headlineSmall)
+                                IconButton(onClick = { model.setPartCount(index, part.count + 1) }) {
+                                    Icon(Icons.Filled.Add, contentDescription = "More exercises")
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            results.forEach { candidate ->
-                val exercise = library.find { it.id == candidate.id } ?: return@forEach
-                CompactRow(
-                    exercise.name,
-                    exercise.bodyPart.ifBlank { "None" },
-                    previewSetLine(snap, exercise, previewKind(exercise.usage, build.kind)),
-                ) {
-                    model.addPicked(candidate.id)
+            Panel {
+                if (total < 1) {
+                    Text("Set at least one count", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    val noun = if (total == 1) "exercise" else "exercises"
+                    Text("You are building $total $noun", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        chosen.joinToString(", ") { it.bodyPart },
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
             }
         }
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp)) {
-            if (canStart) {
-                PrimaryButton("Save and start workout") { model.openPicked() }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            if (byType) {
+                ChoiceChip("Body part", false) { model.setBuildMode("PART") }
+            } else {
+                ChoiceChip("Workout type", false) { model.setBuildMode("TYPE") }
             }
-            if (canDraw) {
-                if (canStart) {
-                    QuietButton("Build") { model.drawFiltered() }
-                } else {
-                    PrimaryButton("Build") { model.drawFiltered() }
-                }
+        }
+        if (!picking && build.picks.isNotEmpty()) {
+            ReorderColumn(
+                items = build.picks,
+                keyOf = { it.key },
+                onMove = { from, to -> model.movePicked(from, to) },
+            ) { index, line, _, _, handle ->
+                val exercise = snap.exercises.find { it.id == line.exerciseId }
+                PickedExerciseCard(
+                    line = line,
+                    exercise = exercise,
+                    showWeight = showsWeight(pickedKind, exercise?.usage),
+                    onName = { model.openPicker(Picker.PickSwap(index)) },
+                    onRemove = { model.removePicked(index) },
+                    onSave = { model.replacePickedSets(index, it) },
+                    handle = handle,
+                )
             }
-            if (canStart || canDraw) {
-                QuietButton("Save as Plan") { model.saveBuildAsPlan() }
-                if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE" || model.planNote == "FILTER") {
-                    Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
-                }
+            QuietButton("Save and start workout") { model.openPicked() }
+        }
+        val canSavePlan = build.picks.isNotEmpty() || build.parts.any { it.count > 0 }
+        if (canSavePlan) {
+            QuietButton("Save as Plan") { model.saveBuildAsPlan() }
+            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE") {
+                Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
             }
         }
     }
@@ -449,14 +539,12 @@ private fun PickedExerciseCard(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
-                if (summary.isNotBlank()) {
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        modifier = Modifier.clickable { editing = !editing },
-                    )
-                }
+                Text(
+                    if (summary.isBlank()) "Sets and reps" else summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    modifier = Modifier.clickable { editing = !editing },
+                )
             }
             handle()
             IconButton(onClick = onRemove) {
@@ -476,9 +564,9 @@ private fun PickedExerciseCard(
 fun ExercisesScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     var query by remember { mutableStateOf("") }
-    var bodyPart by remember { mutableStateOf("") }
-    var workoutType by remember { mutableStateOf("") }
-    val partNames = snap.exercises.flatMap { musclesOf(it.bodyPart) }
+    var filter by remember { mutableStateOf("All") }
+    var byType by remember { mutableStateOf(false) }
+    val parts = snap.exercises.flatMap { musclesOf(it.bodyPart) }
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .distinctBy { it.lowercase() }
@@ -488,6 +576,7 @@ fun ExercisesScreen(model: AppModel) {
         .filter { it.isNotEmpty() }
         .distinctBy { it.lowercase() }
         .sortedBy { it.lowercase() }
+    val chips = if (byType) typeNames else parts
     val filtered = filterExercises(
         snap.exercises.map { exercise ->
             SearchExercise(
@@ -497,7 +586,11 @@ fun ExercisesScreen(model: AppModel) {
                 snap.typesOf(exercise.id).map { it.name },
             )
         },
-        SearchFilters(query, bodyPart, workoutType),
+        SearchFilters(
+            name = query,
+            bodyPart = if (!byType && filter != "All") filter else "",
+            workoutType = if (byType && filter != "All") filter else "",
+        ),
     )
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
@@ -511,10 +604,21 @@ fun ExercisesScreen(model: AppModel) {
                     "${snap.exercises.size} saved",
                     color = MaterialTheme.colorScheme.secondary,
                 )
-                Field("Exercise name", query) { query = it }
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp)) {
-                    FilterMenu("Body part", bodyPart, partNames, Modifier.weight(1f)) { bodyPart = it }
-                    FilterMenu("Workout type", workoutType, typeNames, Modifier.weight(1f)) { workoutType = it }
+                PrimaryButton("Add exercise") { model.open(Screen.AddExercise) }
+                Field("Search", query) { query = it }
+                Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        ChoiceChip("All", filter == "All") { filter = "All" }
+                        chips.forEach { name ->
+                            ChoiceChip(name, filter.equals(name, true)) { filter = name }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        ChoiceChip(if (byType) "Body part" else "Workout type", false) {
+                            byType = !byType
+                            filter = "All"
+                        }
+                    }
                 }
             }
             if (filtered.isEmpty()) {

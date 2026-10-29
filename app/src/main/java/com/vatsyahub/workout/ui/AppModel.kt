@@ -397,7 +397,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (busy()) return
         pendingPlanId = null
         planNote = null
-        build = BuildState(kind, emptyList(), mode = "FILTER")
+        build = buildFor(kind, "PART")
         open(Screen.Build)
     }
 
@@ -972,7 +972,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun saveBuildAsPlan() {
         val current = build
         val loaded = snap.value
-        if (current.picks.isNotEmpty()) {
+        if (current.mode == "PICK" || current.parts.none { it.count > 0 }) {
+            if (current.picks.isEmpty()) return
             val usages = current.picks.map { line ->
                 loaded.exercises.find { it.id == line.exerciseId }?.usage.orEmpty()
             }
@@ -985,20 +986,9 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             )
             return
         }
-        if (current.drawCount < 1) return
-        val part = current.bodyPart.trim()
-        val type = current.workoutType.trim()
-        val counts = buildList {
-            if (part.isNotEmpty()) add(PlanCount(part, current.drawCount, "PART"))
-            if (type.isNotEmpty()) add(PlanCount(type, current.drawCount, "TYPE"))
-            if (isEmpty()) add(PlanCount("", current.drawCount, "PART"))
-        }
-        val mode = when {
-            part.isNotEmpty() && type.isNotEmpty() -> "FILTER"
-            type.isNotEmpty() -> "TYPE"
-            part.isNotEmpty() -> "PART"
-            else -> "FILTER"
-        }
+        val mode = if (current.mode == "TYPE") "TYPE" else "PART"
+        val counts = current.parts.map { PlanCount(it.bodyPart, it.count, mode) }
+        if (counts.none { it.count > 0 }) return
         storePlan(BuilderDraft(kind = current.kind, mode = mode, counts = counts))
     }
 
