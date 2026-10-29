@@ -63,7 +63,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vatsyahub.workout.data.Exercise
-import com.vatsyahub.workout.data.localDay
 import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.data.summary
@@ -83,8 +82,6 @@ import com.vatsyahub.workout.domain.formatSets
 import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.parseDecimal
 import com.vatsyahub.workout.domain.showsWeight
-import com.vatsyahub.workout.domain.weekStart
-import java.time.LocalDate
 import kotlinx.coroutines.launch
 
 private fun kindIcon(shape: String): ImageVector = when (shape) {
@@ -98,16 +95,10 @@ private fun kindIcon(shape: String): ImageVector = when (shape) {
 fun HomeScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val name = snap.profile.name.trim()
-    val today = LocalDate.now()
-    val start = weekStart(today)
-    val end = start.plusDays(6)
-    val week = snap.workouts.count { workout ->
-        workout.finished && !localDay(workout.performedAt).let { it.isBefore(start) || it.isAfter(end) }
-    }
     val recent = snap.workouts.filter { it.finished }.sortedByDescending { it.performedAt }.take(3)
     Page {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
-            ProfilePhoto(snap.profile.avatar, 52.dp) { model.tab(Screen.Settings) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
+            ProfilePhoto(snap.profile.avatar, 44.dp) { model.tab(Screen.Settings) }
             Column(Modifier.padding(start = 14.dp)) {
                 Text("Barbook", style = MaterialTheme.typography.headlineLarge)
                 if (name.isNotBlank()) {
@@ -115,7 +106,6 @@ fun HomeScreen(model: AppModel) {
                 }
             }
         }
-        Text("Start a session, or look back at the week.", color = MaterialTheme.colorScheme.secondary)
         val active = model.activeCard(snap)
         if (active != null) {
             Panel {
@@ -131,22 +121,9 @@ fun HomeScreen(model: AppModel) {
             }
         } else {
             model.notice?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+                Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
             }
         }
-        SectionLabel("This week")
-        Panel {
-            Text(
-                week.toString(),
-                style = MaterialTheme.typography.headlineLarge,
-            )
-            Text(
-                if (week == 1) "workout" else "workouts",
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            QuietButton("Reports") { model.open(Screen.Reports) }
-        }
-        SectionLabel("Start")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             StartCard(Icons.Filled.FitnessCenter, "Heavy", "Weights", Modifier.weight(1f)) { model.beginBuild("HEAVY") }
             StartCard(Icons.Filled.AccessibilityNew, "Bodyweight", "No weights", Modifier.weight(1f)) { model.beginBuild("BODYWEIGHT") }
@@ -192,29 +169,21 @@ fun HomeScreen(model: AppModel) {
                 ) { model.repeat(workout.id) }
             }
         }
-        SectionLabel("Recent")
-        if (recent.isEmpty()) {
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconBadge(Icons.Filled.History)
-                    Text(
-                        "Finished sessions show up here.",
-                        modifier = Modifier.padding(start = 12.dp),
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
-        } else {
+        if (recent.isNotEmpty()) {
+            SectionLabel("Recent")
             recent.forEach { workout ->
                 val summary = snap.summary(workout)
-                WorkoutCard(
+                CompactRow(
                     cardTitle(summary),
                     cardDetail(summary),
-                    favourite = workout.favourite,
-                    icon = historyIcon(workout, snap),
-                ) {
-                    model.open(Screen.LogDetail(workout.id))
-                }
+                    leading = {
+                        Icon(
+                            historyIcon(workout, snap),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                ) { model.open(Screen.LogDetail(workout.id)) }
             }
         }
         QuietButton("Log a past workout") { model.open(Screen.LogType) }
