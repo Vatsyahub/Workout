@@ -557,17 +557,33 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 chosen += card to ask.bodyPart
             }
         }
-        if (chosen.isEmpty()) return emptyList()
-        val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
-        val groups = chosen.toMap()
+        val counted = if (chosen.isEmpty()) {
+            emptyList()
+        } else {
+            val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
+            val groups = chosen.toMap()
+            ordered.map { card ->
+                StrengthLine(
+                    card.id,
+                    prescribedSets(card, ordered, build.kind),
+                    groups[card].orEmpty(),
+                    build.mode,
+                    key = lineKey(),
+                )
+            }
+        }
+        val extras = build.picks
+            .filter { pick -> counted.none { it.exerciseId == pick.exerciseId } }
+            .map { line -> line.copy(sets = line.sets.map { it.copy() }) }
+        if (extras.isEmpty()) return counted
+        val combined = counted + extras
+        val cards = combined.mapNotNull { lineCard(it) }
+        if (cards.size != combined.size) return combined
+        val kind = classifyPickedKind(cards.map { it.usage }, build.kind)
+        val ordered = orderDrawn(cards, kind, dragged = counted.isEmpty() && build.picksDragged)
         return ordered.map { card ->
-            StrengthLine(
-                card.id,
-                prescribedSets(card, ordered, build.kind),
-                groups[card].orEmpty(),
-                build.mode,
-                key = lineKey(),
-            )
+            val line = combined.first { it.key == card.key }
+            if (line.setsEdited) line else line.copy(sets = prescribedSets(card, ordered, kind))
         }
     }
 
@@ -627,7 +643,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (lines.isEmpty()) return
         val origin = pendingPlanId
         pendingPlanId = null
-        strength = StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin)
+        strength = withKind(StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin))
         open(Screen.Strength)
     }
 
@@ -982,6 +998,21 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                     kind = classifyPickedKind(usages, current.kind),
                     mode = "PICK",
                     lines = current.picks.map { line -> planLine(loaded, line) },
+                ),
+            )
+            return
+        }
+        if (current.picks.isNotEmpty()) {
+            val lines = drawnBuildLines()
+            if (lines.isEmpty()) return
+            val usages = lines.map { line ->
+                loaded.exercises.find { it.id == line.exerciseId }?.usage.orEmpty()
+            }
+            storePlan(
+                BuilderDraft(
+                    kind = classifyPickedKind(usages, current.kind),
+                    mode = "LINES",
+                    lines = lines.map { line -> planLine(loaded, line) },
                 ),
             )
             return
@@ -1737,7 +1768,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                             openingDraftSets(),
                             groupKind = if (handPicked) "PICK" else "PART",
                         )
-                        strength = withKind(draft.copy(lines = draft.lines + line))
+                        val cards = (draft.lines + line).mapNotNull { lineCard(it) }
+                        val kind = if (handPicked) classifyPickedKind(cards.map { it.usage }, draft.kind) else draft.kind
+                        val card = cards.find { it.key == line.key }
+                        val sets = if (card == null) line.sets else prescribedSets(card, cards, kind)
+                        strength = withKind(draft.copy(lines = draft.lines + line.copy(sets = sets)))
+                    } else {
+                        addPicked(id)
                     }
                 } else {
                     launch { repo.addBlock(request.workoutId, id) }

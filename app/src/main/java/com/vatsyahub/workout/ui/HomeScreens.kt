@@ -318,16 +318,16 @@ fun BuildScreen(model: AppModel) {
             if (picking) {
                 if (build.picks.isEmpty()) return@ActionPage
                 model.openPicked()
+            } else if (build.parts.none { it.count > 0 } && build.picks.isEmpty()) {
+                return@ActionPage
             } else {
-                val total = build.parts.sumOf { it.count }
-                if (total < 1) return@ActionPage
                 model.drawBuild()
             }
         },
         showAction = !picking || build.picks.isNotEmpty(),
     ) {
         Field("Search", query) { query = it }
-        SoftButton("Add exercise") { model.open(Screen.AddExercise) }
+        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         if (query.isNotBlank() && matches.isEmpty()) {
             Text(
                 "No exercises match.",
@@ -400,6 +400,7 @@ fun BuildScreen(model: AppModel) {
                     handle = handle,
                 )
             }
+            SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         } else if (pool.isEmpty()) {
             Panel {
                 Text("Add exercises before a workout can be drawn.")
@@ -494,12 +495,12 @@ fun BuildScreen(model: AppModel) {
                     handle = handle,
                 )
             }
-            QuietButton("Save and start workout") { model.openPicked() }
+            SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         }
         val canSavePlan = build.picks.isNotEmpty() || build.parts.any { it.count > 0 }
         if (canSavePlan) {
             QuietButton("Save as Plan") { model.saveBuildAsPlan() }
-            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE") {
+            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE" || model.planNote == "LINES") {
                 Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
             }
         }

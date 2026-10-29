@@ -631,13 +631,14 @@ fun PickerScreen(model: AppModel) {
             is Picker.AddStrength -> {
                 SoftButton("Add exercise") { model.open(Screen.AddExercise) }
                 val draft = model.strength
+                val addingToBuild = request.workoutId == null && draft == null
                 val kind = if (request.workoutId == null) {
-                    draft?.kind ?: "HEAVY"
+                    draft?.kind ?: model.build.kind
                 } else {
                     snap.workouts.find { it.id == request.workoutId }?.kind ?: "HEAVY"
                 }
                 val handPicked = request.workoutId == null &&
-                    (kind == "MIXED" || draft?.lines?.any { it.groupKind == "PICK" } == true)
+                    (kind == "MIXED" || draft?.lines?.any { it.groupKind == "PICK" } == true || addingToBuild)
                 val exercises = if (handPicked || kind == "MIXED") snap.strengthLibrary() else snap.pool(kind)
                 exercises.forEach { exercise ->
                     CompactRow(
