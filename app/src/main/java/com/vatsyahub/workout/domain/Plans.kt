@@ -155,13 +155,6 @@ fun planDetail(body: PlanBody): String {
     if (body.lines.isNotEmpty()) {
         return body.lines.joinToString(", ") { line -> line.name.ifBlank { "Exercise" } }
     }
-    if (body.mode == "FILTER") {
-        val count = body.counts.maxOfOrNull { it.count } ?: 0
-        if (count < 1) return ""
-        val noun = if (count == 1) "exercise" else "exercises"
-        val labels = body.counts.map { it.label.trim() }.filter { it.isNotEmpty() }.distinct()
-        return if (labels.isEmpty()) "$count $noun" else labels.joinToString(" · ") + " · $count $noun"
-    }
     return body.counts.filter { it.count > 0 }.joinToString(", ") { "${it.label} ${it.count}" }
 }
 

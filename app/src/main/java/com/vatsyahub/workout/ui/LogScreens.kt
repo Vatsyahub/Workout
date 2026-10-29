@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +20,6 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Pool
 import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Text
@@ -109,16 +106,6 @@ internal fun historyDetail(workout: Workout, snap: Snapshot): String {
     }
 }
 
-internal fun historySetsLine(workout: Workout, snap: Snapshot): String {
-    if (workout.kind != "HEAVY" && workout.kind != "BODYWEIGHT" && workout.kind != "MIXED") return ""
-    val blocks = snap.blocks.filter { it.workoutId == workout.id }.sortedBy { it.position }
-    return blocks.mapNotNull { block ->
-        val exercise = snap.exercises.find { it.id == block.exerciseId }
-        val sets = snap.sets.filter { it.blockId == block.id }.sortedBy { it.position }
-        formatSets(sets.map { SetLoad(it.reps, it.weightKg) }, showsWeight(workout.kind, exercise?.usage)).ifBlank { null }
-    }.distinct().joinToString(", ")
-}
-
 private fun plainTime(seconds: Int): String {
     val safe = seconds.coerceAtLeast(0)
     val hours = safe / 3600
@@ -169,39 +156,36 @@ fun LogsScreen(model: AppModel) {
                 )
                 SectionLabel("This week")
                 if (week.isEmpty()) {
-                    Text(
-                        "Nothing logged this week.",
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
+                    Panel {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconBadge(Icons.Filled.History)
+                            Text(
+                                "Nothing logged this week.",
+                                modifier = Modifier.padding(start = 12.dp),
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                    }
                 }
             }
             items(week, key = { it.id }) { workout ->
-                CompactRow(
+                WorkoutCard(
                     historyKind(workout, snap),
                     historyDetail(workout, snap),
-                    historySetsLine(workout, snap),
-                    trailing = if (workout.favourite) {
-                        {
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Favourite",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    onClick = { model.open(Screen.LogDetail(workout.id)) },
-                )
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
             }
             if (months.isNotEmpty()) {
                 item { SectionLabel("Earlier") }
             }
             items(months, key = { "${it.year}-${it.monthValue}" }) { month ->
-                CompactRow(
+                WorkoutCard(
                     month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)),
                     "Earlier sessions",
+                    icon = Icons.Filled.History,
                 ) {
                     model.open(Screen.Month(month.year, month.monthValue))
                 }
@@ -222,32 +206,20 @@ fun MonthScreen(model: AppModel, year: Int, month: Int) {
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                Text("Earlier sessions", color = MaterialTheme.colorScheme.secondary)
+                Panel {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    Text("Earlier sessions", color = MaterialTheme.colorScheme.secondary)
+                }
             }
             items(logs, key = { it.id }) { workout ->
-                CompactRow(
+                WorkoutCard(
                     historyKind(workout, snap),
                     historyDetail(workout, snap),
-                    historySetsLine(workout, snap),
-                    trailing = if (workout.favourite) {
-                        {
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = "Favourite",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    onClick = { model.open(Screen.LogDetail(workout.id)) },
-                )
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
             }
         }
     }
@@ -300,7 +272,6 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 model.changeDuration(workout.id, text.trim().ifEmpty { null }?.let { parseDuration(it, true) })
             }
         }
-        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
         if (blocks.isEmpty()) {
             Panel { Text("No exercises in this session.") }
         }
@@ -330,7 +301,7 @@ private fun StrengthLog(model: AppModel, workout: Workout) {
                 }
             }
         }
-        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
+        QuietButton("Add exercise") { model.openPicker(Picker.AddStrength(workout.id)) }
         QuietButton("Delete", MaterialTheme.colorScheme.error) { model.deleteWorkout(workout.id) }
         QuietButton("Repeat") { model.repeat(workout.id) }
     }
@@ -421,7 +392,7 @@ private fun HiitLog(model: AppModel, workout: Workout) {
                         QuietButton("Remove") { removing = true }
                     }
                 }
-                SoftButton("Add exercise") { model.openPicker(Picker.AddHiit(setIndex, workout.id)) }
+                QuietButton("Add exercise") { model.openPicker(Picker.AddHiit(setIndex, workout.id)) }
                 val splits = snap.splits.filter { it.workoutId == workout.id && it.setIndex == setIndex && it.phase != "REST" }
                     .sortedBy { it.position }
                 if (splits.isNotEmpty()) {

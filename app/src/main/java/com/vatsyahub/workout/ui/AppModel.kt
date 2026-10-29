@@ -146,9 +146,6 @@ data class BuildState(
     val mode: String = "PART",
     val picks: List<StrengthLine> = emptyList(),
     val picksDragged: Boolean = false,
-    val drawCount: Int = 0,
-    val bodyPart: String = "",
-    val workoutType: String = "",
 )
 
 data class ClockUi(
@@ -396,42 +393,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun beginBuild(kind: String) {
         if (busy()) return
         pendingPlanId = null
-        planNote = null
         build = buildFor(kind, "PART")
         open(Screen.Build)
-    }
-
-    fun setDrawCount(count: Int) {
-        build = build.copy(drawCount = count.coerceAtLeast(0))
-    }
-
-    fun setBuildBodyPart(name: String) {
-        build = build.copy(bodyPart = name)
-    }
-
-    fun setBuildType(name: String) {
-        build = build.copy(workoutType = name)
     }
 
     fun setBuildMode(mode: String) {
         val picks = build.picks
         build = buildFor(build.kind, mode).copy(picks = picks, picksDragged = build.picksDragged)
-    }
-
-    private fun restoredBuild(kind: String, body: PlanBody, mode: String): BuildState {
-        if (body.mode != "FILTER") {
-            return BuildState(kind, body.counts.map { PartAsk(it.label, it.count) }, mode)
-        }
-        val partCount = body.counts.firstOrNull { it.mode == "PART" }
-        val typeCount = body.counts.firstOrNull { it.mode == "TYPE" }
-        return BuildState(
-            kind = kind,
-            parts = emptyList(),
-            mode = "FILTER",
-            drawCount = maxOf(partCount?.count ?: 0, typeCount?.count ?: 0),
-            bodyPart = partCount?.label.orEmpty(),
-            workoutType = typeCount?.label.orEmpty(),
-        )
     }
 
     private fun buildFor(kind: String, mode: String): BuildState {
@@ -534,7 +502,6 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         drawnOrder(cards, kind, dragged)
 
     private fun drawnBuildLines(): List<StrengthLine> {
-        if (build.mode == "FILTER") return drawnFilteredLines()
         val pool = snap.value.pool(build.kind)
         val used = HashSet<Long>()
         val chosen = ArrayList<Pair<DrawCard, String>>()
@@ -557,81 +524,18 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 chosen += card to ask.bodyPart
             }
         }
-        val counted = if (chosen.isEmpty()) {
-            emptyList()
-        } else {
-            val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
-            val groups = chosen.toMap()
-            ordered.map { card ->
-                StrengthLine(
-                    card.id,
-                    prescribedSets(card, ordered, build.kind),
-                    groups[card].orEmpty(),
-                    build.mode,
-                    key = lineKey(),
-                )
-            }
-        }
-        val extras = build.picks
-            .filter { pick -> counted.none { it.exerciseId == pick.exerciseId } }
-            .map { line -> line.copy(sets = line.sets.map { it.copy() }) }
-        if (extras.isEmpty()) return counted
-        val combined = counted + extras
-        val cards = combined.mapNotNull { lineCard(it) }
-        if (cards.size != combined.size) return combined
-        val kind = classifyPickedKind(cards.map { it.usage }, build.kind)
-        val ordered = orderDrawn(cards, kind, dragged = counted.isEmpty() && build.picksDragged)
-        return ordered.map { card ->
-            val line = combined.first { it.key == card.key }
-            if (line.setsEdited) line else line.copy(sets = prescribedSets(card, ordered, kind))
-        }
-    }
-
-    private fun drawnFilteredLines(): List<StrengthLine> {
-        val count = build.drawCount
-        if (count < 1) return emptyList()
-        val pool = snap.value.pool(build.kind).map { drawCard(it) }.filter { card ->
-            val partOk = build.bodyPart.isBlank() || matchesBodyPart(card.muscles.joinToString(", "), build.bodyPart)
-            val typeOk = build.workoutType.isBlank() || card.types.any { it.equals(build.workoutType, true) }
-            partOk && typeOk
-        }
-        val picked = if (build.workoutType.isNotBlank() && build.bodyPart.isBlank()) {
-            spreadType(pool, count, Random)
-        } else {
-            takeExact(pool, count, Random, emptySet())
-        }
-        if (picked.isEmpty()) return emptyList()
-        val ordered = orderDrawn(picked, build.kind, dragged = false)
-        val groupKind = if (build.bodyPart.isNotBlank() || build.workoutType.isBlank()) "PART" else "TYPE"
-        val group = build.bodyPart.ifBlank { build.workoutType }
+        if (chosen.isEmpty()) return emptyList()
+        val ordered = orderDrawn(chosen.map { it.first }, build.kind, dragged = false)
+        val groups = chosen.toMap()
         return ordered.map { card ->
             StrengthLine(
                 card.id,
                 prescribedSets(card, ordered, build.kind),
-                group,
-                groupKind,
+                groups[card].orEmpty(),
+                build.mode,
                 key = lineKey(),
             )
         }
-    }
-
-    fun drawFiltered() {
-        if (activeMode != null) {
-            notice = ACTIVE_BLOCK
-            return
-        }
-        if (build.drawCount < 1) return
-        build = build.copy(mode = "FILTER")
-        val lines = drawnBuildLines()
-        if (lines.isEmpty()) {
-            notice = "No exercises match."
-            return
-        }
-        notice = null
-        val origin = pendingPlanId
-        pendingPlanId = null
-        strength = StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin)
-        open(Screen.Strength)
     }
 
     fun drawBuild() {
@@ -643,7 +547,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         if (lines.isEmpty()) return
         val origin = pendingPlanId
         pendingPlanId = null
-        strength = withKind(StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin))
+        strength = StrengthDraft(build.kind, LocalDate.now(), null, lines, sourcePlanId = origin)
         open(Screen.Strength)
     }
 
@@ -733,7 +637,6 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun openPicked() {
         if (build.picks.isEmpty()) return
         if (busy()) return
-        build = build.copy(mode = "PICK")
         val draft = StrengthDraft(
             build.kind,
             LocalDate.now(),
@@ -988,39 +891,22 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     fun saveBuildAsPlan() {
         val current = build
         val loaded = snap.value
-        if (current.mode == "PICK" || current.parts.none { it.count > 0 }) {
+        val draft = if (current.mode == "PICK") {
             if (current.picks.isEmpty()) return
             val usages = current.picks.map { line ->
                 loaded.exercises.find { it.id == line.exerciseId }?.usage.orEmpty()
             }
-            storePlan(
-                BuilderDraft(
-                    kind = classifyPickedKind(usages, current.kind),
-                    mode = "PICK",
-                    lines = current.picks.map { line -> planLine(loaded, line) },
-                ),
+            BuilderDraft(
+                kind = classifyPickedKind(usages, current.kind),
+                mode = "PICK",
+                lines = current.picks.map { line -> planLine(loaded, line) },
             )
-            return
+        } else {
+            val counts = current.parts.map { PlanCount(it.bodyPart, it.count, current.mode) }
+            if (counts.none { it.count > 0 }) return
+            BuilderDraft(kind = current.kind, mode = current.mode, counts = counts)
         }
-        if (current.picks.isNotEmpty()) {
-            val lines = drawnBuildLines()
-            if (lines.isEmpty()) return
-            val usages = lines.map { line ->
-                loaded.exercises.find { it.id == line.exerciseId }?.usage.orEmpty()
-            }
-            storePlan(
-                BuilderDraft(
-                    kind = classifyPickedKind(usages, current.kind),
-                    mode = "LINES",
-                    lines = lines.map { line -> planLine(loaded, line) },
-                ),
-            )
-            return
-        }
-        val mode = if (current.mode == "TYPE") "TYPE" else "PART"
-        val counts = current.parts.map { PlanCount(it.bodyPart, it.count, mode) }
-        if (counts.none { it.count > 0 }) return
-        storePlan(BuilderDraft(kind = current.kind, mode = mode, counts = counts))
+        storePlan(draft)
     }
 
     fun saveStrengthAsPlan() {
@@ -1099,7 +985,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                 val mode = body.counts.firstOrNull { it.mode.isNotBlank() }?.mode ?: body.mode
                 pendingPlanId = origin
                 strength = null
-                build = restoredBuild(row.kind, body, mode)
+                build = BuildState(row.kind, body.counts.map { PartAsk(it.label, it.count) }, mode)
                 drawBuild()
                 val drafted = strength
                 if (drafted != null && drafted.lines.isNotEmpty()) {
@@ -1134,7 +1020,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
             }
             else -> {
                 val mode = body.counts.firstOrNull { it.mode.isNotBlank() }?.mode ?: body.mode.ifBlank { "PART" }
-                build = restoredBuild(row.kind, body, mode)
+                build = BuildState(row.kind, body.counts.map { PartAsk(it.label, it.count) }, mode)
                 strength = StrengthDraft(
                     kind = row.kind,
                     day = LocalDate.now(),
@@ -1768,13 +1654,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
                             openingDraftSets(),
                             groupKind = if (handPicked) "PICK" else "PART",
                         )
-                        val cards = (draft.lines + line).mapNotNull { lineCard(it) }
-                        val kind = if (handPicked) classifyPickedKind(cards.map { it.usage }, draft.kind) else draft.kind
-                        val card = cards.find { it.key == line.key }
-                        val sets = if (card == null) line.sets else prescribedSets(card, cards, kind)
-                        strength = withKind(draft.copy(lines = draft.lines + line.copy(sets = sets)))
-                    } else {
-                        addPicked(id)
+                        strength = withKind(draft.copy(lines = draft.lines + line))
                     }
                 } else {
                     launch { repo.addBlock(request.workoutId, id) }

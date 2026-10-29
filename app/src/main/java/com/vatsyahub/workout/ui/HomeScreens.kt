@@ -40,7 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -63,26 +62,34 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vatsyahub.workout.data.Exercise
+import com.vatsyahub.workout.data.localDay
 import com.vatsyahub.workout.data.pool
 import com.vatsyahub.workout.data.strengthLibrary
 import com.vatsyahub.workout.data.summary
 import com.vatsyahub.workout.data.typesOf
 import com.vatsyahub.workout.domain.PickCandidate
 import com.vatsyahub.workout.domain.PlanBody
-import com.vatsyahub.workout.domain.SearchExercise
-import com.vatsyahub.workout.domain.SearchFilters
 import com.vatsyahub.workout.domain.SetLoad
 import com.vatsyahub.workout.domain.classifyPickedKind
 import com.vatsyahub.workout.domain.decodePlan
-import com.vatsyahub.workout.domain.filterExercises
-import com.vatsyahub.workout.domain.matchExercises
 import com.vatsyahub.workout.domain.planDetail
 import com.vatsyahub.workout.domain.planTitle
 import com.vatsyahub.workout.domain.formatSets
+import com.vatsyahub.workout.domain.matchesBodyPart
+import com.vatsyahub.workout.domain.matchExercises
 import com.vatsyahub.workout.domain.musclesOf
 import com.vatsyahub.workout.domain.parseDecimal
 import com.vatsyahub.workout.domain.showsWeight
+import com.vatsyahub.workout.domain.weekStart
+import java.time.LocalDate
 import kotlinx.coroutines.launch
+
+private fun usageLabel(usage: String): String = when (usage) {
+    "HEAVY" -> "Heavy"
+    "BODYWEIGHT" -> "Bodyweight"
+    "BOTH" -> "Both"
+    else -> usage
+}
 
 private fun kindIcon(shape: String): ImageVector = when (shape) {
     "SWIM" -> Icons.Filled.Pool
@@ -95,10 +102,16 @@ private fun kindIcon(shape: String): ImageVector = when (shape) {
 fun HomeScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
     val name = snap.profile.name.trim()
+    val today = LocalDate.now()
+    val start = weekStart(today)
+    val end = start.plusDays(6)
+    val week = snap.workouts.count { workout ->
+        workout.finished && !localDay(workout.performedAt).let { it.isBefore(start) || it.isAfter(end) }
+    }
     val recent = snap.workouts.filter { it.finished }.sortedByDescending { it.performedAt }.take(3)
     Page {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)) {
-            ProfilePhoto(snap.profile.avatar, 44.dp) { model.tab(Screen.Settings) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
+            ProfilePhoto(snap.profile.avatar, 52.dp) { model.tab(Screen.Settings) }
             Column(Modifier.padding(start = 14.dp)) {
                 Text("Barbook", style = MaterialTheme.typography.headlineLarge)
                 if (name.isNotBlank()) {
@@ -106,6 +119,7 @@ fun HomeScreen(model: AppModel) {
                 }
             }
         }
+        Text("Start a session, or look back at the week.", color = MaterialTheme.colorScheme.secondary)
         val active = model.activeCard(snap)
         if (active != null) {
             Panel {
@@ -121,9 +135,22 @@ fun HomeScreen(model: AppModel) {
             }
         } else {
             model.notice?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp))
+                Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
             }
         }
+        SectionLabel("This week")
+        Panel {
+            Text(
+                week.toString(),
+                style = MaterialTheme.typography.headlineLarge,
+            )
+            Text(
+                if (week == 1) "workout" else "workouts",
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            QuietButton("Reports") { model.open(Screen.Reports) }
+        }
+        SectionLabel("Start")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             StartCard(Icons.Filled.FitnessCenter, "Heavy", "Weights", Modifier.weight(1f)) { model.beginBuild("HEAVY") }
             StartCard(Icons.Filled.AccessibilityNew, "Bodyweight", "No weights", Modifier.weight(1f)) { model.beginBuild("BODYWEIGHT") }
@@ -169,21 +196,29 @@ fun HomeScreen(model: AppModel) {
                 ) { model.repeat(workout.id) }
             }
         }
-        if (recent.isNotEmpty()) {
-            SectionLabel("Recent")
+        SectionLabel("Recent")
+        if (recent.isEmpty()) {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Filled.History)
+                    Text(
+                        "Finished sessions show up here.",
+                        modifier = Modifier.padding(start = 12.dp),
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+        } else {
             recent.forEach { workout ->
                 val summary = snap.summary(workout)
-                CompactRow(
+                WorkoutCard(
                     cardTitle(summary),
                     cardDetail(summary),
-                    leading = {
-                        Icon(
-                            historyIcon(workout, snap),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                ) { model.open(Screen.LogDetail(workout.id)) }
+                    favourite = workout.favourite,
+                    icon = historyIcon(workout, snap),
+                ) {
+                    model.open(Screen.LogDetail(workout.id))
+                }
             }
         }
         QuietButton("Log a past workout") { model.open(Screen.LogType) }
@@ -255,7 +290,7 @@ fun BuildScreen(model: AppModel) {
     val build = model.build
     val library = snap.strengthLibrary()
     if (library.isEmpty()) {
-        ActionPage("Add exercise", { model.open(Screen.AddExercise) }) {
+        ActionPage("Add exercise", { model.tab(Screen.Exercises) }) {
             Panel {
                 Text("Add exercises before a workout can be drawn.")
                 Text(
@@ -267,16 +302,15 @@ fun BuildScreen(model: AppModel) {
         }
         return
     }
-    LaunchedEffect(build.mode) {
-        if (build.mode != "PART" && build.mode != "TYPE" && build.mode != "PICK") {
-            model.setBuildMode("PART")
-        }
-    }
     val picking = build.mode == "PICK"
     val byType = build.mode == "TYPE"
     val pool = snap.pool(build.kind)
     var query by remember { mutableStateOf("") }
-    val matches = matchExercises(library.map { PickCandidate(it.id, it.name, it.usage) }, query)
+    val matches = if (!picking) {
+        emptyList()
+    } else {
+        matchExercises(library.map { PickCandidate(it.id, it.name, it.usage) }, query)
+    }
     val pickedKind = classifyPickedKind(
         build.picks.map { line -> snap.exercises.find { it.id == line.exerciseId }?.usage.orEmpty() },
         build.kind,
@@ -287,34 +321,14 @@ fun BuildScreen(model: AppModel) {
             if (picking) {
                 if (build.picks.isEmpty()) return@ActionPage
                 model.openPicked()
-            } else if (build.parts.none { it.count > 0 } && build.picks.isEmpty()) {
-                return@ActionPage
             } else {
+                val total = build.parts.sumOf { it.count }
+                if (total < 1) return@ActionPage
                 model.drawBuild()
             }
         },
         showAction = !picking || build.picks.isNotEmpty(),
     ) {
-        Field("Search", query) { query = it }
-        SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
-        if (query.isNotBlank() && matches.isEmpty()) {
-            Text(
-                "No exercises match.",
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        matches.forEach { candidate ->
-            val exercise = library.find { it.id == candidate.id } ?: return@forEach
-            CompactRow(
-                exercise.name,
-                exercise.bodyPart.ifBlank { "None" },
-                previewSetLine(snap, exercise, previewKind(exercise.usage, build.kind)),
-            ) {
-                model.addPicked(candidate.id)
-                query = ""
-            }
-        }
         if (!picking && pool.isNotEmpty()) {
             Panel {
                 if (byType) {
@@ -348,6 +362,24 @@ fun BuildScreen(model: AppModel) {
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            Field("Exercise name", query) { query = it }
+            if (query.isNotBlank() && matches.isEmpty()) {
+                Text(
+                    "No exercises match.",
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            matches.forEach { candidate ->
+                val exercise = library.find { it.id == candidate.id } ?: return@forEach
+                val detail = listOf(exercise.bodyPart, usageLabel(exercise.usage))
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+                WorkoutCard(exercise.name, detail, icon = Icons.Filled.FitnessCenter) {
+                    model.addPicked(candidate.id)
+                    query = ""
+                }
+            }
             if (build.picks.isEmpty()) {
                 Panel {
                     Text("Add at least one exercise", style = MaterialTheme.typography.titleMedium)
@@ -357,9 +389,10 @@ fun BuildScreen(model: AppModel) {
                 items = build.picks,
                 keyOf = { it.key },
                 onMove = { from, to -> model.movePicked(from, to) },
-            ) { index, line, _, _, handle ->
+            ) { index, line, number, _, handle ->
                 val exercise = snap.exercises.find { it.id == line.exerciseId }
                 PickedExerciseCard(
+                    number = number,
                     line = line,
                     exercise = exercise,
                     showWeight = showsWeight(pickedKind, exercise?.usage),
@@ -369,7 +402,6 @@ fun BuildScreen(model: AppModel) {
                     handle = handle,
                 )
             }
-            SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
         } else if (pool.isEmpty()) {
             Panel {
                 Text("Add exercises before a workout can be drawn.")
@@ -447,29 +479,10 @@ fun BuildScreen(model: AppModel) {
                 ChoiceChip("Workout type", false) { model.setBuildMode("TYPE") }
             }
         }
-        if (!picking && build.picks.isNotEmpty()) {
-            ReorderColumn(
-                items = build.picks,
-                keyOf = { it.key },
-                onMove = { from, to -> model.movePicked(from, to) },
-            ) { index, line, _, _, handle ->
-                val exercise = snap.exercises.find { it.id == line.exerciseId }
-                PickedExerciseCard(
-                    line = line,
-                    exercise = exercise,
-                    showWeight = showsWeight(pickedKind, exercise?.usage),
-                    onName = { model.openPicker(Picker.PickSwap(index)) },
-                    onRemove = { model.removePicked(index) },
-                    onSave = { model.replacePickedSets(index, it) },
-                    handle = handle,
-                )
-            }
-            SoftButton("Add exercise") { model.openPicker(Picker.AddStrength(null)) }
-        }
-        val canSavePlan = build.picks.isNotEmpty() || build.parts.any { it.count > 0 }
+        val canSavePlan = if (picking) build.picks.isNotEmpty() else build.parts.any { it.count > 0 }
         if (canSavePlan) {
             QuietButton("Save as Plan") { model.saveBuildAsPlan() }
-            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE" || model.planNote == "LINES") {
+            if (model.planNote == "PICK" || model.planNote == "PART" || model.planNote == "TYPE") {
                 Text("Saved as a Plan", color = MaterialTheme.colorScheme.secondary)
             }
         }
@@ -484,6 +497,7 @@ private fun planIcon(kind: String): ImageVector = when (kind) {
 
 @Composable
 private fun PickedExerciseCard(
+    number: Int,
     line: StrengthLine,
     exercise: Exercise?,
     showWeight: Boolean,
@@ -493,27 +507,15 @@ private fun PickedExerciseCard(
     handle: @Composable () -> Unit,
 ) {
     var editing by remember(line.key) { mutableStateOf(false) }
-    val summary = formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight)
-    Column(Modifier.fillMaxWidth()) {
+    Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    exercise?.name ?: "Choose an exercise",
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    modifier = Modifier.clickable(onClick = onName),
-                )
+            OrderBadge(number)
+            Column(Modifier.weight(1f).padding(start = 12.dp).clickable(onClick = onName)) {
+                Text(exercise?.name ?: "Choose an exercise", style = MaterialTheme.typography.titleLarge)
                 Text(
                     exercise?.bodyPart?.takeIf { it.isNotBlank() } ?: "None",
                     color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                )
-                Text(
-                    if (summary.isBlank()) "Sets and reps" else summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    modifier = Modifier.clickable { editing = !editing },
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
             handle()
@@ -521,6 +523,11 @@ private fun PickedExerciseCard(
                 Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
             }
         }
+        val summary = formatSets(line.sets.map { SetLoad(it.reps, it.weightKg) }, showWeight)
+        if (summary.isNotBlank()) {
+            Text(summary, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
+        }
+        SoftButton("Sets and reps") { editing = !editing }
         if (editing) {
             EditableSets(line.sets, showWeight) { saved ->
                 onSave(saved)
@@ -533,35 +540,18 @@ private fun PickedExerciseCard(
 @Composable
 fun ExercisesScreen(model: AppModel) {
     val snap by model.snap.collectAsState()
-    var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
     var byType by remember { mutableStateOf(false) }
-    val parts = snap.exercises.flatMap { musclesOf(it.bodyPart) }
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
-        .sortedBy { it.lowercase() }
+    val parts = snap.exercises.flatMap { musclesOf(it.bodyPart) }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
     val typeNames = snap.exercises.flatMap { exercise -> snap.typesOf(exercise.id).map { it.name } }
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
+        .distinct()
         .sortedBy { it.lowercase() }
     val chips = if (byType) typeNames else parts
-    val filtered = filterExercises(
-        snap.exercises.map { exercise ->
-            SearchExercise(
-                exercise.id,
-                exercise.name,
-                exercise.bodyPart,
-                snap.typesOf(exercise.id).map { it.name },
-            )
-        },
-        SearchFilters(
-            name = query,
-            bodyPart = if (!byType && filter != "All") filter else "",
-            workoutType = if (byType && filter != "All") filter else "",
-        ),
-    )
+    val filtered = snap.exercises.filter { exercise ->
+        if (filter == "All") return@filter true
+        if (byType) snap.typesOf(exercise.id).any { it.name.equals(filter, true) }
+        else matchesBodyPart(exercise.bodyPart, filter)
+    }
     ListPage {
         LazyColumn(Modifier.fillMaxSize()) {
             item {
@@ -574,8 +564,6 @@ fun ExercisesScreen(model: AppModel) {
                     "${snap.exercises.size} saved",
                     color = MaterialTheme.colorScheme.secondary,
                 )
-                PrimaryButton("Add exercise") { model.open(Screen.AddExercise) }
-                Field("Search", query) { query = it }
                 Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                         ChoiceChip("All", filter == "All") { filter = "All" }
@@ -584,7 +572,7 @@ fun ExercisesScreen(model: AppModel) {
                         }
                     }
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        ChoiceChip(if (byType) "Body part" else "Workout type", false) {
+                        ChoiceChip(if (byType) "Muscles" else "Types", false) {
                             byType = !byType
                             filter = "All"
                         }
@@ -593,18 +581,17 @@ fun ExercisesScreen(model: AppModel) {
             }
             if (filtered.isEmpty()) {
                 item {
-                    Text(
-                        if (snap.exercises.isEmpty()) "No exercises yet." else "No exercises match.",
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
+                    Panel {
+                        Text(if (snap.exercises.isEmpty()) "No exercises yet." else "Nothing matches this filter.")
+                    }
                 }
             }
-            items(filtered, key = { it.id }) { candidate ->
-                val exercise = snap.exercises.find { it.id == candidate.id } ?: return@items
-                CompactRow(
+            items(filtered, key = { it.id }) { exercise ->
+                val usage = usageLabel(exercise.usage)
+                WorkoutCard(
                     exercise.name,
-                    exercise.bodyPart.ifBlank { "None" },
-                    previewSetLine(snap, exercise, previewKind(exercise.usage, "HEAVY")),
+                    listOf(exercise.bodyPart, usage).filter { it.isNotBlank() }.joinToString(" · "),
+                    icon = Icons.Filled.FitnessCenter,
                 ) {
                     model.open(Screen.Exercise(exercise.id))
                 }
@@ -615,6 +602,7 @@ fun ExercisesScreen(model: AppModel) {
         }
     }
 }
+
 @Composable
 fun ExerciseFormScreen(model: AppModel, exerciseId: Long?) {
     val snap by model.snap.collectAsState()
@@ -727,13 +715,22 @@ fun SettingsScreen(model: AppModel) {
         Text(
             "Profile",
             style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
         )
-        CompactRow(
-            profile.name.trim().ifBlank { "Add your name" },
-            facts,
-            leading = { ProfilePhoto(profile.avatar, 36.dp) { model.open(Screen.Profile) } },
-        ) { model.open(Screen.Profile) }
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProfilePhoto(profile.avatar, 64.dp) { model.open(Screen.Profile) }
+                Column(Modifier.padding(start = 14.dp)) {
+                    Text(
+                        profile.name.trim().ifBlank { "Add your name" },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    if (facts.isNotBlank()) {
+                        Text(facts, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
+        }
         SectionLabel("Appearance")
         Row {
             ChoiceChip("Light", profile.appearance != "DARK") {
@@ -743,9 +740,9 @@ fun SettingsScreen(model: AppModel) {
                 model.saveProfile(profile.copy(appearance = "DARK"))
             }
         }
-        CompactRow("Edit profile", "Name, age, weight, height, and photo") { model.open(Screen.Profile) }
-        CompactRow("Reports", "This week, one exercise, and bests") { model.open(Screen.Reports) }
-        CompactRow("Backup", "Export or import a file") { model.open(Screen.Carry) }
+        Door(Icons.Filled.Person, "Edit profile", "Name, age, weight, height, and photo") { model.open(Screen.Profile) }
+        Door(Icons.Filled.History, "Reports", "This week, one exercise, and bests") { model.open(Screen.Reports) }
+        Door(Icons.Filled.Folder, "Backup", "Export or import a file") { model.open(Screen.Carry) }
     }
 }
 
@@ -802,7 +799,7 @@ fun ProfileScreen(model: AppModel) {
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
             if (bitmap == null) {
-                CompactRow("Photo", "Choose a picture") { pick.launch("image/*") }
+                InsetCard("Photo", "Choose a picture", Icons.Filled.Person) { pick.launch("image/*") }
             } else {
                 Image(
                     bitmap,
